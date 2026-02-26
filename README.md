@@ -36,6 +36,47 @@ Two things control what you see:
   - **Advanced** = reveals **Portfolio** + **Advanced Panels**, and shows extra **Tools ▾** actions
 - **Tools ▾ menu (topbar)**: quick access to heavy/ops panels (many are **Advanced-only**)
 
+### Settings guide (start here)
+
+If the settings feel like “too much”, use this order:
+
+1. **Leave everything as-is** and work in **Mode: Basic** until you *need* multi-project / ops / approvals.
+2. Treat settings as three “risk levels”:
+   - **View filters** (safe): change what you *see* (Due / Blocked-only / Saved Views).
+   - **UI preferences** (safe): change how things *look* (List vs Kanban).
+   - **Engines** (power): can create new tasks or change scheduling behavior (recurring + scheduling assist + bulk maintenance).
+3. Before touching any **Engine** setting, do a quick safety backup: **Export JSON**.
+
+#### Pick your “profile” (recommended presets)
+
+| Your goal | Turn on | Keep off for now |
+|---|---|---|
+| **Solo / daily usage** | Mode: **Basic**, List layout, Due filter as needed | Auto-recurring, Scheduling Assist, SLA action rules, Approvals/RBAC |
+| **Weekly planning** | Saved checklist views, Task Planner, (optional) Scheduling Assist | SLA action rules, Bulk maintenance |
+| **Multiple projects** | Mode: **Advanced**, Portfolio filters/sort | Approvals/RBAC unless you need governance |
+| **Team governance** | Approval gates, Workflow + audit, RBAC, Unlock reason, Team profiles | Auto actions (SLA action rules) until the team agrees |
+
+#### Where to find the settings
+
+- **Mode toggle (topbar)**: controls whether Advanced Panels/Tools appear.
+- **Checklist filters**: Due / Blocked-only / Saved Views live with the Checklist view (fast triage).
+- **Tools ▾ (topbar)**: jumps to the bigger panels:
+  - **Ops & Alerts** = notifications, stale/SLA, capacity signal
+  - **Automation & Review** = recurring + scheduling + review helpers
+  - **Approvals & Team** = confirmations, audit, RBAC, profiles
+  - **Reports & Export Tools** = exports, digests, dashboard view saves
+
+#### What counts as “safe” vs “power”
+
+- **Safe (won’t change your data):** UI Mode, layout (List/Kanban), filters, saved views, pinned views, snoozing/dismissing notifications, export UI preferences.
+- **Power (can change data or behavior):** auto-recurring, scheduling assist, bulk milestone maintenance, SLA action rules.
+
+> Tip: If you only want PM tracking, you can ignore everything below and never open Advanced mode.
+
+
+<details>
+<summary><strong>Full setting reference (all settings)</strong></summary>
+
 ### Advanced tool use cases & what each setting does
 
 #### UI & navigation
@@ -94,6 +135,11 @@ Two things control what you see:
 | **Risk digest scope** | All projects | Generate a daily/weekly risk snapshot across everything, or focus on the active project only. |
 | **Portfolio filters** (query/status/sort) | empty/all/risk | Multi-project command view; filter by status and sort by risk to find what needs attention first. |
 
+</details>
+
+<details>
+<summary><strong>Power users: storage keys (localStorage)</strong></summary>
+
 ### Advanced settings storage (for debugging / power users)
 
 All data is stored locally in your browser. Besides the main app database (`stark_pm_v1`), advanced tools persist UI/config under these keys:
@@ -134,6 +180,8 @@ All data is stored locally in your browser. Besides the main app database (`star
 | `stark_pm_phase16_team_profiles_v1` | Team profiles | Saved identity profiles; syncs into RBAC session. |
 | `stark_pm_phase16_ui_polish_v1` | UI polish prefs | Remembers sidebar/catalog presentation tweaks. |
 | `stark_pm_phase17_portfolio_v1` | Portfolio filters | Keeps your portfolio query/status/sort across reloads. |
+
+</details>
 
 ---
 

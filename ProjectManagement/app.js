@@ -362,7 +362,7 @@ function boot(){
   setInterval(tickClock, 1000);
 
   initRadar();
-  bootUi.log("Initializing status radar…");
+  bootUi.log("Initializing status widgets…");
   renderAll();
   {
     const c = getStateCounts_();
@@ -651,13 +651,13 @@ function sanitizeModule(m){
 
 function sanitizeMilestone(m){
   return {
-    id: String(m.id ?? uid()),
-    title: String(m.title ?? "Untitled Milestone"),
-    notes: String(m.notes ?? ""),
-    priority: (m.priority === "p1" || m.priority === "p3") ? m.priority : "p2",
-    state: (m.state === "doing" || m.state === "done") ? m.state : "todo",
-    createdAt: Number(m.createdAt ?? Date.now()),
-    tasks: Array.isArray(m.tasks) ? m.tasks.map(sanitizeTask) : [],
+    id: String(m?.id ?? uid()),
+    title: String(m?.title ?? "Untitled Milestone"),
+    notes: String(m?.notes ?? ""),
+    priority: (m?.priority === "p1" || m?.priority === "p3") ? m.priority : "p2",
+    state: (m?.state === "doing" || m?.state === "done") ? m.state : "todo",
+    createdAt: Number(m?.createdAt ?? Date.now()),
+    tasks: Array.isArray(m?.tasks) ? m.tasks.map(sanitizeTask) : [],
   };
 }
 
@@ -671,15 +671,15 @@ function sanitizeStep(s){
 }
 
 function sanitizeTask(t){
-  const steps0 = Array.isArray(t.steps) ? t.steps.map(sanitizeStep).filter(s => s.text.trim()) : [];
+  const steps0 = Array.isArray(t?.steps) ? t.steps.map(sanitizeStep).filter(s => s.text.trim()) : [];
   const steps = autoNestStepsIfNeeded_(steps0);
   return {
-    id: String(t.id ?? uid()),
-    title: String(t.title ?? "Untitled Task"),
-    done: Boolean(t.done),
-    severity: (t.severity === "high" || t.severity === "blocker") ? t.severity : "normal",
-    assignee: String(t.assignee ?? ""),
-    createdAt: Number(t.createdAt ?? Date.now()),
+    id: String(t?.id ?? uid()),
+    title: String(t?.title ?? "Untitled Task"),
+    done: Boolean(t?.done),
+    severity: (t?.severity === "high" || t?.severity === "blocker") ? t.severity : "normal",
+    assignee: String(t?.assignee ?? ""),
+    createdAt: Number(t?.createdAt ?? Date.now()),
     steps,
   };
 }
@@ -1446,9 +1446,812 @@ function tickClock(){
   ui.nowText.textContent = d.toLocaleTimeString([], { hour12:false });
 }
 
+function initTopbarDeclutter_(){
+  const topbarRight = document.querySelector('#topbarRight') || document.querySelector('.topbar__right');
+  if(!topbarRight) return;
+
+  if(topbarRight._topbarDeclutterSync){
+    try{ topbarRight._topbarDeclutterSync(); }catch(err){ console.warn('Topbar declutter resync failed', err); }
+    return;
+  }
+
+  const hiddenClass = 'topbar__btn-hidden';
+  const coreVisibleIds = new Set(['btnUndo', 'btnRedo', 'btnUiMode']);
+  const exportIds = ['btnExportJson', 'btnExportMd', 'btnExportTxt'];
+  const toolsFixedIds = ['btnWipe'];
+  const advancedOnlyToolIds = new Set([
+    'phase8BtnNotifications',
+    'phase9BtnReminders',
+    'phase10BtnRecovery',
+    'phase11BtnSla',
+    'phase11BtnDashViews',
+    'phase12BtnRiskDigest',
+    'phase12BtnCheckins',
+    'phase13BtnAutomation',
+    'phase15BtnRoles',
+    'phase16BtnTeamProfiles'
+  ]);
+  const proxyMap = new Map();
+  let autoIdSeq = 0;
+
+  function ensureId_(el){
+    if(!el) return '';
+    if(el.id) return el.id;
+    autoIdSeq += 1;
+    el.id = `topbarAutoBtn_${autoIdSeq}`;
+    return el.id;
+  }
+
+  function safeLabel_(el){
+    const text = String((el && el.textContent) || '').replace(/\s+/g, ' ').trim();
+    return text || String(el?.title || 'Action').trim() || 'Action';
+  }
+
+  function mkMenu_(key, triggerLabel, anchorEl){
+    const existing = topbarRight.querySelector(`.topbar-menu[data-menu-key="${key}"]`);
+    if(existing){
+      return {
+        root: existing,
+        trigger: existing.querySelector('.topbar-menu__trigger'),
+        panel: existing.querySelector('.topbar-menu__panel')
+      };
+    }
+
+    const root = document.createElement('div');
+    root.className = 'topbar-menu';
+    root.dataset.menuKey = key;
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'btn btn--ghost topbar-menu__trigger';
+    trigger.setAttribute('aria-haspopup', 'menu');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.textContent = triggerLabel;
+
+    const panel = document.createElement('div');
+    panel.className = 'topbar-menu__panel';
+    panel.setAttribute('role', 'menu');
+
+    root.appendChild(trigger);
+    root.appendChild(panel);
+
+    const anchor = anchorEl && anchorEl.parentElement === topbarRight ? anchorEl : null;
+    topbarRight.insertBefore(root, anchor);
+
+    trigger.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const isOpen = root.classList.contains('is-open');
+      closeMenus_();
+      if(!isOpen){
+        syncProxyStates_();
+        root.classList.add('is-open');
+        trigger.setAttribute('aria-expanded', 'true');
+      }
+    });
+
+    return { root, trigger, panel };
+  }
+
+  function closeMenus_(){
+    topbarRight.querySelectorAll('.topbar-menu.is-open').forEach((menu) => {
+      menu.classList.remove('is-open');
+      const t = menu.querySelector('.topbar-menu__trigger');
+      if(t) t.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  document.addEventListener('click', (ev) => {
+    if(!topbarRight.contains(ev.target)) closeMenus_();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if(ev.key === 'Escape') closeMenus_();
+  });
+
+  const exportMenu = mkMenu_('export', 'Export ▾', document.getElementById('btnExportJson'));
+  const toolsMenu = mkMenu_('tools', 'Tools ▾', document.getElementById('btnWipe'));
+
+  function ensureSection_(panel, key, label){
+    let sec = panel.querySelector(`.topbar-menu__section[data-section-key="${key}"]`);
+    if(!sec){
+      sec = document.createElement('div');
+      sec.className = 'topbar-menu__section';
+      sec.dataset.sectionKey = key;
+      sec.textContent = label;
+      panel.appendChild(sec);
+    }
+    return sec;
+  }
+
+  ensureSection_(exportMenu.panel, 'exports', 'Exports');
+  ensureSection_(toolsMenu.panel, 'tools', 'Topbar Tools');
+
+  function upsertProxy_(menuPanel, targetEl, opts){
+    if(!menuPanel || !targetEl) return;
+    if(targetEl.dataset.topbarProxy === '1') return;
+
+    const targetId = ensureId_(targetEl);
+    if(!targetId) return;
+
+    let proxy = proxyMap.get(targetId);
+    if(!proxy){
+      proxy = document.createElement('button');
+      proxy.type = 'button';
+      proxy.className = 'btn btn--ghost topbar-menu__item';
+      proxy.dataset.topbarProxy = '1';
+      proxy.dataset.proxyFor = targetId;
+      proxy.addEventListener('click', () => {
+        closeMenus_();
+        const target = document.getElementById(targetId);
+        if(target && !target.disabled){
+          target.click();
+        }
+      });
+      proxyMap.set(targetId, proxy);
+      menuPanel.appendChild(proxy);
+    }else if(proxy.parentElement !== menuPanel){
+      menuPanel.appendChild(proxy);
+    }
+
+    targetEl.classList.add(hiddenClass);
+    targetEl.setAttribute('aria-hidden', 'true');
+    targetEl.tabIndex = -1;
+
+    const label = opts && opts.label ? opts.label : safeLabel_(targetEl);
+    proxy.textContent = label;
+    proxy.title = String(targetEl.title || label);
+    proxy.disabled = !!targetEl.disabled;
+    const advancedOnly = !!((opts && opts.advancedOnly) || advancedOnlyToolIds.has(targetId));
+    proxy.dataset.advancedOnly = advancedOnly ? '1' : '0';
+    proxy.classList.toggle('btn--danger', !!(opts && opts.danger));
+    proxy.classList.toggle('is-danger', !!(opts && opts.danger));
+    if(opts && opts.danger){
+      proxy.classList.remove('btn--ghost');
+    }else{
+      proxy.classList.add('btn--ghost');
+      proxy.classList.remove('btn--danger');
+      proxy.classList.remove('is-danger');
+    }
+  }
+
+  function syncProxyStates_(){
+    let isAdvMode = true;
+    try{
+      if(typeof phase18UiModeIsAdvanced_ === 'function') isAdvMode = !!phase18UiModeIsAdvanced_();
+    }catch{}
+
+    proxyMap.forEach((proxy, targetId) => {
+      const target = document.getElementById(targetId);
+      if(!target){
+        proxy.remove();
+        proxyMap.delete(targetId);
+        return;
+      }
+
+      const isAdvancedOnly = (proxy.dataset.advancedOnly === '1') || advancedOnlyToolIds.has(targetId);
+      const hiddenForMode = isAdvancedOnly && !isAdvMode;
+      proxy.classList.toggle('phase18uimode-hidden', hiddenForMode);
+      proxy.disabled = hiddenForMode || !!target.disabled;
+
+      const nextLabel = safeLabel_(target);
+      if(proxy.dataset.proxyFor && !proxy.dataset.customLabel){
+        proxy.textContent = nextLabel;
+      }
+      if(target.classList) target.classList.add(hiddenClass);
+    });
+  }
+
+  function syncMenus_(){
+    exportIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if(el) upsertProxy_(exportMenu.panel, el, { label: safeLabel_(el), danger:false });
+    });
+
+    toolsFixedIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if(el) upsertProxy_(toolsMenu.panel, el, { label: safeLabel_(el), danger:true });
+    });
+
+    const directButtons = Array.from(topbarRight.children).filter((child) => child && child.tagName === 'BUTTON');
+    directButtons.forEach((btn) => {
+      if(btn.dataset.topbarProxy === '1') return;
+      const id = ensureId_(btn);
+      if(!id) return;
+      if(coreVisibleIds.has(id)) return;
+      if(exportIds.includes(id)) return;
+      if(toolsFixedIds.includes(id)) return;
+      upsertProxy_(toolsMenu.panel, btn, { label: safeLabel_(btn), danger: btn.classList.contains('btn--danger') });
+    });
+
+    syncProxyStates_();
+  }
+
+  let syncQueued = false;
+  function queueSync_(){
+    if(syncQueued) return;
+    syncQueued = true;
+    setTimeout(() => {
+      syncQueued = false;
+      syncMenus_();
+    }, 0);
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    for(const m of mutations){
+      if(m.type === 'childList'){
+        queueSync_();
+        return;
+      }
+    }
+  });
+  observer.observe(topbarRight, { childList:true });
+
+  topbarRight._topbarDeclutterSync = syncMenus_;
+  topbarRight._topbarDeclutterObserver = observer;
+
+  syncMenus_();
+}
+
+function openPanelInOwningTab_(selector, fallbackTab, delay){
+  const pickDelay = Number(delay);
+  const waitMs = Number.isFinite(pickDelay) ? Math.max(0, pickDelay) : 40;
+  const fallback = String(fallbackTab || 'dashboard');
+  const findTarget = () => {
+    try{ return document.querySelector(selector); }catch{ return null; }
+  };
+  const scrollWithTopPad_ = (node) => {
+    if(!node) return;
+    try{ scrollIntoViewWithTopPad_(node, { behavior:'smooth', block:'start' }, 18); }catch{}
+  };
+
+  let target = findTarget();
+  let tabId = fallback;
+  try{
+    const ownerTab = target && target.closest ? target.closest('.tab[data-tab]') : null;
+    const detected = ownerTab && ownerTab.dataset ? String(ownerTab.dataset.tab || '').trim() : '';
+    if(detected) tabId = detected;
+  }catch{}
+
+  try{ switchTab(tabId); }catch{}
+
+  setTimeout(() => {
+    const node = findTarget();
+    if(!node){
+      if(fallback && tabId !== fallback){
+        try{ switchTab(fallback); }catch{}
+        setTimeout(() => {
+          const fallbackNode = findTarget();
+          if(fallbackNode) scrollWithTopPad_(fallbackNode);
+        }, 30);
+      }
+      return;
+    }
+    scrollWithTopPad_(node);
+  }, waitMs);
+}
+
+function scrollIntoViewWithTopPad_(node, opts, topPad){
+  if(!node) return false;
+  const padNum = Number(topPad);
+  const pad = Number.isFinite(padNum) ? Math.max(0, Math.round(padNum)) : 18;
+  const options = (opts && typeof opts === 'object') ? opts : {};
+  const behavior = (typeof options.behavior === 'string' && options.behavior) ? options.behavior : 'auto';
+
+  try{
+    const tabScroller = node.closest ? node.closest('.tab') : null;
+    if(tabScroller && typeof tabScroller.scrollTop === 'number'){
+      const tabRect = tabScroller.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const delta = nodeRect.top - tabRect.top;
+      const nextTop = Math.max(0, Math.round(tabScroller.scrollTop + delta - pad));
+      tabScroller.scrollTo({ top: nextTop, behavior });
+      return true;
+    }
+  }catch{}
+
+  const native = scrollIntoViewWithTopPad_._native || null;
+  try{
+    if(typeof native === 'function'){
+      const nextOpts = Object.assign({}, options, { block:'start', behavior });
+      native.call(node, nextOpts);
+    }else{
+      node.scrollIntoView({ behavior, block:'start' });
+    }
+  }catch{}
+  try{ window.scrollBy({ top: -pad, behavior }); }catch{}
+  return true;
+}
+
+function installScrollIntoViewTopPadPatch_(){
+  if(installScrollIntoViewTopPadPatch_._done) return;
+  const proto = (typeof Element !== 'undefined' && Element.prototype) ? Element.prototype : null;
+  if(!proto || typeof proto.scrollIntoView !== 'function') return;
+
+  const native = proto.scrollIntoView;
+  if(native && native._pmTopPadPatched){
+    installScrollIntoViewTopPadPatch_._done = true;
+    return;
+  }
+
+  scrollIntoViewWithTopPad_._native = native;
+
+  const patched = function(arg){
+    try{
+      if(arg && typeof arg === 'object'){
+        const block = String(arg.block || '').toLowerCase();
+        if(block === 'start'){
+          scrollIntoViewWithTopPad_(this, arg, 18);
+          return;
+        }
+      }
+    }catch{}
+    return native.apply(this, arguments);
+  };
+  try{ patched._pmTopPadPatched = true; }catch{}
+  proto.scrollIntoView = patched;
+  installScrollIntoViewTopPadPatch_._done = true;
+}
+
+installScrollIntoViewTopPadPatch_();
+
+
+function ensureUiDialogHost_(){
+  if(typeof document === 'undefined') return null;
+  let host = document.getElementById('pmUiDialogHost');
+  if(host) return host;
+
+  try{
+    const style = document.createElement('style');
+    style.id = 'pmUiDialogStyles';
+    style.textContent = `
+      body.pm-ui-dialog-open{overflow:hidden}
+      .pm-ui-dialog{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}
+      .pm-ui-dialog.is-open,.pm-ui-dialog.is-closing{display:flex}
+      .pm-ui-dialog__backdrop{
+        position:absolute;inset:0;
+        background:
+          radial-gradient(900px 520px at 15% 10%, rgba(56,246,255,.08), transparent 58%),
+          radial-gradient(900px 560px at 85% 88%, rgba(155,92,255,.10), transparent 62%),
+          rgba(6,10,18,.76);
+        backdrop-filter:blur(4px);
+        opacity:0;
+        will-change:opacity;
+      }
+      .pm-ui-dialog__card{
+        position:relative;z-index:1;
+        opacity:0;
+        transform:translateY(10px) scale(.985);
+        will-change:transform, opacity;
+        width:min(620px,calc(100vw - 32px));max-width:620px;max-height:min(88vh,760px);overflow:auto;
+        border-radius:16px;
+        border:1px solid rgba(56,246,255,.18);
+        background:
+          radial-gradient(520px 180px at 14% 0%, rgba(56,246,255,.10), transparent 62%),
+          radial-gradient(420px 180px at 88% 14%, rgba(155,92,255,.10), transparent 62%),
+          linear-gradient(180deg, rgba(12,18,28,.96), rgba(10,18,28,.92));
+        box-shadow:0 28px 72px rgba(0,0,0,.48), 0 0 0 1px rgba(155,92,255,.07) inset;
+        padding:14px 14px 12px;
+        color:var(--txt, #d7ecff);
+      }
+      .pm-ui-dialog__head{
+        display:flex;align-items:center;justify-content:space-between;gap:10px;
+        margin:0 0 10px;padding-bottom:8px;
+        border-bottom:1px solid rgba(56,246,255,.08);
+      }
+      .pm-ui-dialog__kind{
+        display:inline-flex;align-items:center;gap:6px;
+        font-size:10px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;
+        border-radius:999px;padding:4px 9px;
+        border:1px solid rgba(56,246,255,.20);
+        background:rgba(10,18,28,.34);
+        color:var(--muted, #8fb9d6);
+        box-shadow:0 0 0 1px rgba(155,92,255,.05) inset;
+      }
+      .pm-ui-dialog[data-kind="alert"] .pm-ui-dialog__kind{
+        border-color:rgba(56,246,255,.26);
+        background:rgba(56,246,255,.09);
+        color:rgba(215,236,255,.94);
+      }
+      .pm-ui-dialog[data-kind="confirm"] .pm-ui-dialog__kind{
+        border-color:rgba(155,92,255,.28);
+        background:rgba(155,92,255,.09);
+        color:rgba(215,236,255,.94);
+      }
+      .pm-ui-dialog[data-kind="prompt"] .pm-ui-dialog__kind{
+        border-color:rgba(56,246,255,.24);
+        background:rgba(56,246,255,.07);
+        color:rgba(215,236,255,.94);
+      }
+      .pm-ui-dialog[data-danger="1"] .pm-ui-dialog__kind{
+        border-color:rgba(255,77,125,.34);
+        background:rgba(255,77,125,.10);
+        color:rgba(255,226,236,.96);
+      }
+      .pm-ui-dialog__title{
+        font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+        color:rgba(215,236,255,.96);margin:0;
+        font-family:var(--mono, ui-monospace);
+      }
+      .pm-ui-dialog__message{
+        white-space:pre-wrap;line-height:1.5;font-size:13px;opacity:.98;
+        color:rgba(215,236,255,.94);
+      }
+      .pm-ui-dialog__hint{
+        margin-top:8px;font-size:11px;opacity:.92;
+        color:var(--muted, #8fb9d6);
+        font-family:var(--mono, ui-monospace);
+      }
+      .pm-ui-dialog__input{
+        width:100%;margin-top:10px;padding:10px 12px;border-radius:12px;
+        border:1px solid rgba(56,246,255,.14);
+        background:rgba(10,18,28,.28);
+        color:var(--txt, #d7ecff);
+        font:inherit;
+        box-shadow:0 0 0 1px rgba(155,92,255,.03) inset;
+        outline:none;
+      }
+      .pm-ui-dialog__input::placeholder{color:rgba(143,185,214,.72)}
+      .pm-ui-dialog__input:focus{
+        border-color:rgba(56,246,255,.36);
+        box-shadow:0 0 0 3px rgba(56,246,255,.10), 0 0 0 1px rgba(155,92,255,.10) inset;
+      }
+      .pm-ui-dialog__actions{
+        display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap;
+        padding-top:10px;border-top:1px solid rgba(56,246,255,.06);
+      }
+      .pm-ui-dialog__btn{
+        appearance:none;border:1px solid rgba(56,246,255,.14);
+        background:rgba(10,18,28,.28);
+        color:rgba(215,236,255,.92);
+        border-radius:12px;padding:9px 12px;
+        font:12px var(--mono, ui-monospace);
+        letter-spacing:.06em;
+        cursor:pointer;min-width:84px;
+        transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+      }
+      .pm-ui-dialog__btn:hover{
+        transform:translateY(-1px);
+        border-color:rgba(56,246,255,.24);
+        background:rgba(10,18,28,.40);
+        box-shadow:0 0 18px rgba(56,246,255,.08);
+      }
+      .pm-ui-dialog__btn:active{transform:translateY(0)}
+      .pm-ui-dialog__btn:focus-visible{
+        outline:none;
+        border-color:rgba(56,246,255,.34);
+        box-shadow:0 0 0 3px rgba(56,246,255,.12), 0 0 0 1px rgba(155,92,255,.08) inset;
+      }
+      .pm-ui-dialog__btn--primary{
+        background:linear-gradient(180deg, rgba(56,246,255,.18), rgba(56,246,255,.08));
+        border-color:rgba(56,246,255,.26);
+        color:rgba(215,236,255,.96);
+      }
+      .pm-ui-dialog__btn--primary:hover{
+        border-color:rgba(56,246,255,.40);
+        box-shadow:0 0 22px rgba(56,246,255,.12);
+      }
+      .pm-ui-dialog__btn--danger{
+        background:linear-gradient(180deg, rgba(255,77,125,.18), rgba(255,77,125,.08));
+        border-color:rgba(255,77,125,.26);
+        color:rgba(255,235,241,.97);
+      }
+      .pm-ui-dialog__btn--danger:hover{
+        border-color:rgba(255,77,125,.40);
+        box-shadow:0 0 22px rgba(255,77,125,.12);
+      }
+
+      .pm-ui-dialog.is-open .pm-ui-dialog__backdrop{animation:pmUiDialogBackdropIn .16s ease-out forwards}
+      .pm-ui-dialog.is-open .pm-ui-dialog__card{animation:pmUiDialogCardIn .18s cubic-bezier(.2,.8,.2,1) forwards}
+      .pm-ui-dialog.is-closing .pm-ui-dialog__backdrop{animation:pmUiDialogBackdropOut .12s ease-in forwards}
+      .pm-ui-dialog.is-closing .pm-ui-dialog__card{animation:pmUiDialogCardOut .14s ease-in forwards}
+      @keyframes pmUiDialogBackdropIn{from{opacity:0}to{opacity:1}}
+      @keyframes pmUiDialogBackdropOut{from{opacity:1}to{opacity:0}}
+      @keyframes pmUiDialogCardIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+      @keyframes pmUiDialogCardOut{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(6px) scale(.992)}}
+      @media (prefers-reduced-motion: reduce){
+        .pm-ui-dialog.is-open .pm-ui-dialog__backdrop,
+        .pm-ui-dialog.is-open .pm-ui-dialog__card,
+        .pm-ui-dialog.is-closing .pm-ui-dialog__backdrop,
+        .pm-ui-dialog.is-closing .pm-ui-dialog__card{animation:none !important;opacity:1;transform:none}
+        .pm-ui-dialog.is-closing .pm-ui-dialog__backdrop,
+        .pm-ui-dialog.is-closing .pm-ui-dialog__card{opacity:0}
+      }
+    `;
+    document.head.appendChild(style);
+  }catch{}
+
+  host = document.createElement('div');
+  host.id = 'pmUiDialogHost';
+  host.className = 'pm-ui-dialog';
+  host.setAttribute('aria-hidden', 'true');
+  host.innerHTML = `
+    <div class="pm-ui-dialog__backdrop" data-act="backdrop"></div>
+    <div class="pm-ui-dialog__card" role="dialog" aria-modal="true" aria-labelledby="pmUiDialogTitle" aria-describedby="pmUiDialogMessage">
+      <div class="pm-ui-dialog__head">
+        <div class="pm-ui-dialog__title" id="pmUiDialogTitle">Message</div>
+        <div class="pm-ui-dialog__kind" id="pmUiDialogKind">Notice</div>
+      </div>
+      <div class="pm-ui-dialog__message" id="pmUiDialogMessage"></div>
+      <div class="pm-ui-dialog__hint" id="pmUiDialogHint" style="display:none"></div>
+      <input class="pm-ui-dialog__input" id="pmUiDialogInput" type="text" autocomplete="off" style="display:none">
+      <div class="pm-ui-dialog__actions" id="pmUiDialogActions"></div>
+    </div>
+  `;
+  host.addEventListener('click', (ev) => {
+    if(ev.target && ev.target.dataset && ev.target.dataset.act === 'backdrop'){
+      const cancel = host._pmUiDialogCancel;
+      if(typeof cancel === 'function') cancel();
+    }
+  });
+  document.body.appendChild(host);
+  return host;
+}
+
+function pmDialogNormalizeMeta_(kind, opts){
+  const messageRaw = String(opts?.message ?? '').trim();
+  const msgLine1 = messageRaw.split(/\n+/).map(v => v.trim()).find(Boolean) || '';
+  const hasTitle = typeof opts?.title === 'string' && opts.title.trim();
+  const dangerExplicit = Object.prototype.hasOwnProperty.call(opts || {}, 'danger');
+  const lower = msgLine1.toLowerCase();
+
+  const looksDelete = /\b(delete|remove|wipe|clear|purge|reset|discard)\b/.test(lower);
+  const looksRestore = /\brestore|recover\b/.test(lower);
+  const looksImport = /\bimport\b/.test(lower);
+  const looksExport = /\bexport\b/.test(lower);
+  const looksSave = /\bsave|create|clone|rename|apply\b/.test(lower);
+  const looksRepair = /\brepair|fix\b/.test(lower);
+  const looksSnooze = /\bsnooze\b/.test(lower);
+  const looksHours = /\bhours?\b/.test(lower);
+  const looksFormat = /\btxt\b|\bjson\b|\bmd\b|\bformat\b/.test(lower);
+  const looksName = /\bname\b/.test(lower);
+
+  let title = hasTitle ? String(opts.title).trim() : '';
+  let okText = (typeof opts?.okText === 'string' && opts.okText.trim()) ? String(opts.okText).trim() : '';
+  let cancelText = (typeof opts?.cancelText === 'string' && opts.cancelText.trim()) ? String(opts.cancelText).trim() : 'Cancel';
+  let placeholder = (typeof opts?.placeholder === 'string' && opts.placeholder.trim()) ? String(opts.placeholder).trim() : '';
+  let hint = (typeof opts?.hint === 'string' && opts.hint.trim()) ? String(opts.hint).trim() : '';
+  let danger = dangerExplicit ? !!opts.danger : false;
+
+  if(!title){
+    if(kind === 'alert') title = 'Notice';
+    else if(kind === 'confirm') title = 'Confirm Action';
+    else title = 'Input Required';
+    if(looksDelete) title = 'Delete';
+    else if(/\bwipe\b/.test(lower)) title = 'Wipe Data';
+    else if(/\bclear\b/.test(lower)) title = 'Clear';
+    else if(looksRestore) title = 'Restore';
+    else if(looksImport) title = 'Import';
+    else if(looksExport) title = 'Export';
+    else if(looksRepair) title = 'Repair';
+    else if(looksSnooze) title = 'Snooze';
+    else if(looksName && kind === 'prompt') title = 'Name';
+  }
+
+  if(!okText){
+    if(kind === 'alert') okText = 'OK';
+    else if(kind === 'prompt') okText = 'Save';
+    else okText = 'Confirm';
+    if(looksDelete) okText = 'Delete';
+    else if(/\bwipe\b/.test(lower)) okText = 'Wipe';
+    else if(looksRestore) okText = 'Restore';
+    else if(looksImport) okText = 'Import';
+    else if(looksExport) okText = 'Export';
+    else if(looksRepair) okText = 'Repair';
+    else if(/\bclear\b/.test(lower)) okText = 'Clear';
+    else if(/\bapply\b/.test(lower)) okText = 'Apply';
+    else if(/\bsave|create|clone\b/.test(lower)) okText = 'Save';
+    else if(/\brename\b/.test(lower)) okText = 'Rename';
+    else if(/\bcontinue\b/.test(lower)) okText = 'Continue';
+    else if(/\bmark done\b/.test(lower)) okText = 'Mark Done';
+    else if(looksSnooze) okText = 'Snooze';
+  }
+
+  if(!danger && (looksDelete || /\bwipe\b/.test(lower) || /\bpurge\b/.test(lower) || (/\bclear\b/.test(lower) && kind === 'confirm'))){
+    danger = true;
+  }
+
+  if(kind === 'prompt' && !placeholder){
+    if(looksFormat) placeholder = 'e.g. TXT, JSON, or MD';
+    else if(looksHours) placeholder = 'Hours';
+    else if(looksName) placeholder = 'Name';
+    else if(/\bdays?\b/.test(lower)) placeholder = 'Days';
+    else if(/\bassignees?\b/.test(lower)) placeholder = 'Alice, Bob';
+    else placeholder = 'Enter value';
+  }
+
+  if(kind === 'prompt' && !hint){
+    hint = 'Press Enter to confirm • Esc to cancel';
+  }else if((kind === 'confirm' || kind === 'alert') && !hint){
+    hint = 'Press Enter to confirm • Esc to cancel';
+  }
+
+  return {
+    kind,
+    message: messageRaw,
+    title,
+    okText,
+    cancelText,
+    placeholder,
+    hint,
+    danger,
+    defaultValue: opts?.defaultValue == null ? '' : String(opts.defaultValue)
+  };
+}
+
+function pmUiDialogAsk_(opts){
+  if(!pmUiDialogAsk_._queue) pmUiDialogAsk_._queue = Promise.resolve();
+  const job = () => new Promise((resolve) => {
+    const host = ensureUiDialogHost_();
+    const kind0 = String(opts?.kind || 'alert');
+    const polished0 = pmDialogNormalizeMeta_(kind0, opts || {});
+    if(!host){
+      const msg0 = polished0.message;
+      const def0 = polished0.defaultValue;
+      if(kind0 === 'confirm'){ resolve(window.confirm ? window.confirm(msg0) : false); return; }
+      if(kind0 === 'prompt'){ resolve(window.prompt ? window.prompt(msg0, def0) : null); return; }
+      try{ if(window._pmNativeAlert) window._pmNativeAlert(msg0); else if(window.alert) window.alert(msg0); }catch{}
+      resolve(undefined);
+      return;
+    }
+
+    const kind = polished0.kind;
+    const title = polished0.title;
+    const message = polished0.message;
+    const defaultValue = polished0.defaultValue;
+    const placeholder = polished0.placeholder;
+    const hint = polished0.hint;
+    const danger = polished0.danger;
+    const okText = polished0.okText;
+    const cancelText = polished0.cancelText;
+    const titleEl = host.querySelector('#pmUiDialogTitle');
+    const kindEl = host.querySelector('#pmUiDialogKind');
+    const msgEl = host.querySelector('#pmUiDialogMessage');
+    const hintEl = host.querySelector('#pmUiDialogHint');
+    const inputEl = host.querySelector('#pmUiDialogInput');
+    const actionsEl = host.querySelector('#pmUiDialogActions');
+    const previouslyFocused = document.activeElement && document.activeElement.focus ? document.activeElement : null;
+
+    host.dataset.kind = kind;
+    host.dataset.danger = danger ? '1' : '0';
+    if(titleEl) titleEl.textContent = title;
+    if(kindEl) kindEl.textContent = kind === 'confirm' ? 'Confirm' : kind === 'prompt' ? 'Input' : 'Notice';
+    if(msgEl) msgEl.textContent = message;
+    if(hintEl){
+      hintEl.textContent = hint || '';
+      hintEl.style.display = hint ? '' : 'none';
+    }
+    if(actionsEl) actionsEl.innerHTML = '';
+    if(inputEl){
+      inputEl.value = defaultValue;
+      inputEl.placeholder = placeholder;
+      inputEl.style.display = kind === 'prompt' ? '' : 'none';
+    }
+
+    let settled = false;
+    const finish = (value) => {
+      if(settled) return;
+      settled = true;
+      const closeMs = 150;
+      const finalizeClose = () => {
+        host.classList.remove('is-open');
+        host.classList.remove('is-closing');
+        host.setAttribute('aria-hidden', 'true');
+        try{ document.body.classList.remove('pm-ui-dialog-open'); }catch{}
+        host._pmUiDialogCancel = null;
+        document.removeEventListener('keydown', onKey, true);
+        setTimeout(() => { try{ previouslyFocused && previouslyFocused.focus && previouslyFocused.focus(); }catch{} }, 0);
+        resolve(value);
+      };
+      try{ if(host._pmUiDialogCloseTimer){ clearTimeout(host._pmUiDialogCloseTimer); host._pmUiDialogCloseTimer = null; } }catch{}
+      if(host.classList.contains('is-open')){
+        host.classList.remove('is-open');
+        host.classList.add('is-closing');
+        host._pmUiDialogCloseTimer = setTimeout(() => {
+          try{ host._pmUiDialogCloseTimer = null; }catch{}
+          finalizeClose();
+        }, closeMs);
+        return;
+      }
+      finalizeClose();
+    };
+    const cancel = () => {
+      if(kind === 'prompt') finish(null);
+      else if(kind === 'confirm') finish(false);
+      else finish(undefined);
+    };
+    host._pmUiDialogCancel = cancel;
+
+    const mkBtn = (label, type) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pm-ui-dialog__btn';
+      if(type === 'primary') btn.classList.add('pm-ui-dialog__btn--primary');
+      if(type === 'danger') btn.classList.add('pm-ui-dialog__btn--danger');
+      btn.textContent = label;
+      return btn;
+    };
+
+    if(kind === 'confirm' || kind === 'prompt'){
+      const cancelBtn = mkBtn(cancelText, 'secondary');
+      cancelBtn.addEventListener('click', cancel);
+      actionsEl && actionsEl.appendChild(cancelBtn);
+    }
+    const okBtn = mkBtn(okText, danger ? 'danger' : 'primary');
+    okBtn.addEventListener('click', () => {
+      if(kind === 'prompt') finish(inputEl ? inputEl.value : '');
+      else if(kind === 'confirm') finish(true);
+      else finish(undefined);
+    });
+    actionsEl && actionsEl.appendChild(okBtn);
+
+    const onKey = (ev) => {
+      if(!host.classList.contains('is-open')) return;
+      if(ev.key === 'Escape'){
+        ev.preventDefault();
+        cancel();
+        return;
+      }
+      if(kind === 'prompt' && ev.key === 'Enter' && ev.target === inputEl){
+        ev.preventDefault();
+        finish(inputEl ? inputEl.value : '');
+        return;
+      }
+      if((kind === 'confirm' || kind === 'alert') && ev.key === 'Enter'){
+        if(ev.target && ev.target.tagName === 'BUTTON') return;
+        ev.preventDefault();
+        if(kind === 'confirm') finish(true); else finish(undefined);
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+
+    try{ if(host._pmUiDialogCloseTimer){ clearTimeout(host._pmUiDialogCloseTimer); host._pmUiDialogCloseTimer = null; } }catch{}
+    host.classList.remove('is-closing');
+    host.classList.add('is-open');
+    host.setAttribute('aria-hidden', 'false');
+    try{ document.body.classList.add('pm-ui-dialog-open'); }catch{}
+    setTimeout(() => {
+      try{
+        if(kind === 'prompt' && inputEl){ inputEl.focus(); inputEl.select(); }
+        else { okBtn.focus(); }
+      }catch{}
+    }, 0);
+  });
+
+  const chain = pmUiDialogAsk_._queue.then(job, job);
+  pmUiDialogAsk_._queue = chain.then(()=>undefined, ()=>undefined);
+  return chain;
+}
+
+function pmAlertDialog_(message, opts){
+  return pmUiDialogAsk_(Object.assign({ title:'Notice', okText:'OK' }, opts || {}, { kind:'alert', message:String(message || '') }));
+}
+function pmConfirmDialog_(message, opts){
+  return pmUiDialogAsk_(Object.assign({ cancelText:'Cancel' }, opts || {}, { kind:'confirm', message:String(message || '') }));
+}
+function pmPromptDialog_(message, defaultValue, opts){
+  return pmUiDialogAsk_(Object.assign({ cancelText:'Cancel' }, opts || {}, { kind:'prompt', message:String(message || ''), defaultValue: defaultValue == null ? '' : String(defaultValue) }));
+}
+
+function installUiAlertPatch_(){
+  if(installUiAlertPatch_._done) return;
+  const nativeAlert = window.alert ? window.alert.bind(window) : null;
+  window.pmAlertDialog_ = pmAlertDialog_;
+  window.pmConfirmDialog_ = pmConfirmDialog_;
+  window.pmPromptDialog_ = pmPromptDialog_;
+  if(nativeAlert){
+    window._pmNativeAlert = nativeAlert;
+    window.alert = function(message){
+      try{ pmAlertDialog_(message, { title:'Notice' }); }
+      catch(err){ try{ nativeAlert(message); }catch{} }
+    };
+  }
+  installUiAlertPatch_._done = true;
+}
+
+try{ installUiAlertPatch_(); }catch(err){ console.warn('UI dialog patch failed', err); }
+
 function wireTopbar(){
-  ui.btnWipe.addEventListener("click", () => {
-    const ok = confirm("Wipe all local PM data? (This only clears localStorage)");
+  ui.btnWipe.addEventListener("click", async () => {
+    const ok = await pmConfirmDialog_('Wipe all local PM data? (This only clears localStorage)', { title:'Confirm Wipe', okText:'Wipe', danger:true });
     if(!ok) return;
     state = mkEmptyState();
     undoStack_ = [];
@@ -1519,6 +2322,8 @@ function wireTopbar(){
     switchTab("import");
     ui.pasteArea.focus();
   });
+
+  initTopbarDeclutter_();
 }
 
 /* ---------------------------
@@ -1678,16 +2483,18 @@ function wireProjects(){
   });
 }
 
-function newProject(){
-  const name = prompt("Project name?", `Project ${state.projects.length + 1}`);
-  if(!name) return;
+async function newProject(){
+  const name = await pmPromptDialog_(`Project name?`, `Project ${state.projects.length + 1}`, { title:'New Project', placeholder:'Project name' });
+  if(name == null) return;
+  const trimmedName = String(name).trim();
+  if(!trimmedName) return;
 
   const mod = mkModule("General");
 
   /** @type {Project} */
   const p = {
     id: uid(),
-    name: name.trim(),
+    name: trimmedName,
     desc: "",
     status: "active",
     tag: "",
@@ -1725,10 +2532,10 @@ function saveProjectDetails(){
   renderAll();
 }
 
-function deleteActiveProject(){
+async function deleteActiveProject(){
   const p = getActiveProject();
   if(!p) return;
-  const ok = confirm(`Delete project "${p.name}"? (Local PM only)`);
+  const ok = await pmConfirmDialog_(`Delete project "${p.name}"? (Local PM only)`, { title:'Delete Project', okText:'Delete', danger:true });
   if(!ok) return;
 
   state.projects = state.projects.filter(x => x.id !== p.id);
@@ -1835,15 +2642,17 @@ function mkTask(title, done){
    Milestones
 ---------------------------- */
 function wireMilestones() {
-    ui.btnNewModule.addEventListener("click", () => {
+    ui.btnNewModule.addEventListener("click", async () => {
         const p = getActiveProject();
         if (!p) { alert("Create/select a project first."); return; }
 
         p.modules = Array.isArray(p.modules) ? p.modules : [];
-        const name = prompt("Module name?", `Module ${p.modules.length + 1}`);
-        if (!name) return;
+        const name = await pmPromptDialog_('Module name?', `Module ${p.modules.length + 1}`, { title:'New Module', placeholder:'Module name' });
+        if (name == null) return;
+        const trimmedName = String(name).trim();
+        if (!trimmedName) return;
 
-        const mod = mkModule(name.trim());
+        const mod = mkModule(trimmedName);
         p.modules.push(mod);
         state.activeModuleId = mod.id;
         state.activeMilestoneId = mod.milestones[0]?.id ?? null;
@@ -1853,16 +2662,18 @@ function wireMilestones() {
         renderAll();
     });
 
-    ui.btnNewMilestone.addEventListener("click", () => {
+    ui.btnNewMilestone.addEventListener("click", async () => {
         const p = getActiveProject();
         if (!p) { alert("Create/select a project first."); return; }
         const mod = getActiveModule(p);
         if (!mod) { alert("Create/select a module first."); return; }
 
-        const title = prompt("Milestone title?", `Milestone ${mod.milestones.length + 1}`);
-        if (!title) return;
+        const title = await pmPromptDialog_('Milestone title?', `Milestone ${mod.milestones.length + 1}`, { title:'New Milestone', placeholder:'Milestone title' });
+        if (title == null) return;
+        const trimmedTitle = String(title).trim();
+        if (!trimmedTitle) return;
 
-        const m = mkMilestone(title.trim());
+        const m = mkMilestone(trimmedTitle);
         mod.milestones.push(m);
         setActiveMilestone(m.id);
 
@@ -1887,14 +2698,14 @@ function wireMilestones() {
         renderAll();
     });
 
-    ui.btnDeleteMilestone.addEventListener("click", () => {
+    ui.btnDeleteMilestone.addEventListener("click", async () => {
         const p = getActiveProject();
         if (!p) return;
         const mod = getActiveModule(p);
         const m = getActiveMilestone(p);
         if (!mod || !m) return;
 
-        const ok = confirm(`Delete milestone "${m.title}"?`);
+        const ok = await pmConfirmDialog_(`Delete milestone "${m.title}"?`, { title:'Delete Milestone', okText:'Delete', danger:true });
         if (!ok) return;
 
         mod.milestones = mod.milestones.filter(x => x.id !== m.id);
@@ -1975,14 +2786,14 @@ function wireChecklist(){
     renderAll();
   });
 
-  ui.btnClearDone.addEventListener("click", () => {
+  ui.btnClearDone.addEventListener("click", async () => {
     const p = getActiveProject();
     const m = p ? getActiveMilestone(p) : null;
     if(!m) return;
     const doneCount = m.tasks.filter(t => t.done).length;
     if(!doneCount) return;
 
-    const ok = confirm(`Remove ${doneCount} done task(s) from this milestone?`);
+    const ok = await pmConfirmDialog_(`Remove ${doneCount} done task(s) from this milestone?`, { title:'Clear Done Tasks', okText:'Remove', danger:true });
     if(!ok) return;
 
     m.tasks = m.tasks.filter(t => !t.done);
@@ -2436,13 +3247,14 @@ function buildPreviewTree(p){
   `;
 }
 
-function applyImport(cand, { forceNew }){
+async function applyImport(cand, { forceNew }){
   if(cand?.kind === "state-json"){
     const incomingState = sanitizeState(migrateState_(cand.state || {}));
     const incomingCounts = computeCountsForState_(incomingState);
 
-    const ok = confirm(
-      `Restore full app state from JSON?\n\nThis will replace current local data.\nIncoming: ${incomingCounts.projects} project(s), ${incomingCounts.milestones} milestone(s), ${incomingCounts.tasks} task(s).`
+    const ok = await pmConfirmDialog_(
+      `Restore full app state from JSON?\n\nThis will replace current local data.\nIncoming: ${incomingCounts.projects} project(s), ${incomingCounts.milestones} milestone(s), ${incomingCounts.tasks} task(s).`,
+      { title:'Import JSON', okText:'Restore', danger:true }
     );
     if(!ok) return;
 
@@ -2500,7 +3312,7 @@ function applyImport(cand, { forceNew }){
     }
 
     const mergeImpact = computeMergeImpact_(target, imported);
-    const mergeOk = confirm(
+    const mergeOk = await pmConfirmDialog_(
       `Merge into existing project "${target.name}"?
 
 ` +
@@ -2510,7 +3322,8 @@ function applyImport(cand, { forceNew }){
 ` +
       `New tasks: ${mergeImpact.newTasks}
 ` +
-      `Task upgrades: ${mergeImpact.updatedTasks}`
+      `Task upgrades: ${mergeImpact.updatedTasks}`,
+      { title:'Merge Import', okText:'Merge' }
     );
     if(!mergeOk) return;
 
@@ -2622,8 +3435,9 @@ function mergeProject(target, incoming){
   // - if module name matches, merge inside; else append module
   target.desc = target.desc || incoming.desc;
   target.tag = target.tag || incoming.tag;
-  if(target.status === "done" && incoming.status !== "done"){
-    target.status = incoming.status;
+  // Preserve a completed target project during merge; only propagate completion forward.
+  if(target.status !== "done" && incoming.status === "done"){
+    target.status = "done";
   }
 
   target.modules = Array.isArray(target.modules) ? target.modules : [ mkModule("General") ];
@@ -2646,10 +3460,14 @@ function mergeProject(target, incoming){
         continue;
       }
 
-      // merge notes/state/priority if target blank-ish
+      // merge notes if blank; merge priority/state only when target still at default values
       msMatch.notes = msMatch.notes || incMs.notes;
-      msMatch.priority = msMatch.priority || incMs.priority;
-      msMatch.state = msMatch.state || incMs.state;
+      if((!msMatch.priority || msMatch.priority === "p2") && incMs.priority && incMs.priority !== "p2"){
+        msMatch.priority = incMs.priority;
+      }
+      if((!msMatch.state || msMatch.state === "todo") && incMs.state && incMs.state !== "todo"){
+        msMatch.state = incMs.state;
+      }
 
       msMatch.tasks = Array.isArray(msMatch.tasks) ? msMatch.tasks : [];
       for(const incTask of (Array.isArray(incMs.tasks) ? incMs.tasks : [])){
@@ -3324,8 +4142,8 @@ function renderChecklist(){
       titleInput.focus();
       titleInput.select();
     });
-el.querySelector('[data-act="del"]').addEventListener("click", () => {
-      const ok = confirm("Delete task?");
+el.querySelector('[data-act="del"]').addEventListener("click", async () => {
+      const ok = await pmConfirmDialog_(`Delete task "${t.title}"?`, { title:'Delete Task', okText:'Delete', danger:true });
       if(!ok) return;
       m.tasks = m.tasks.filter(x => x.id !== t.id);
       expandedSteps.delete(t.id);
@@ -3432,10 +4250,22 @@ el.querySelector('[data-act="del"]').addEventListener("click", () => {
 var radarTimer = null;
 
 function initRadar(){
+  const radarSweep = $("#radarSweep");
+  const radarBlips = $("#radarBlips");
+
+  // Radar UI is optional now (dashboard keeps counters only).
+  if(!radarSweep || !radarBlips){
+    if(radarTimer){
+      clearInterval(radarTimer);
+      radarTimer = null;
+    }
+    return;
+  }
+
   safeAnime(() => {
     const { animate } = anime;
     animate({
-      targets: "#radarSweep",
+      targets: radarSweep,
       rotate: [0, 360],
       duration: 2400,
       easing: "linear",
@@ -3444,13 +4274,13 @@ function initRadar(){
   });
 
   // create a few blips (positions updated later)
-  $("#radarBlips").innerHTML = "";
+  radarBlips.innerHTML = "";
   for(let i=0;i<8;i++){
     const b = document.createElement("div");
     b.className = "blip";
     b.style.left = `${10 + Math.random()*80}%`;
     b.style.top = `${10 + Math.random()*80}%`;
-    $("#radarBlips").appendChild(b);
+    radarBlips.appendChild(b);
   }
 
   if(radarTimer) clearInterval(radarTimer);
@@ -4405,7 +5235,7 @@ function phase3BulkSetTaskDone_(done){
   renderAll();
 }
 
-function phase3BulkDeleteTasks_(){
+async function phase3BulkDeleteTasks_(){
   const { p, m } = phase3GetChecklistContext_();
   if(!m || !p) return;
 
@@ -4416,7 +5246,8 @@ function phase3BulkDeleteTasks_(){
   }
 
   const msg = `Delete ${ids.length} task(s) from "${m.title}"?`;
-  if(!confirm(msg)) return;
+  const ok = await pmConfirmDialog_(msg, { title:'Bulk Delete Tasks', okText:'Delete', danger:true });
+  if(!ok) return;
 
   const idSet = new Set(ids);
   const before = m.tasks.length;
@@ -4430,7 +5261,7 @@ function phase3BulkDeleteTasks_(){
   renderAll();
 }
 
-function phase3ToggleArchiveActiveProject_(){
+async function phase3ToggleArchiveActiveProject_(){
   const p = getActiveProject();
   if(!p) return;
 
@@ -4440,7 +5271,7 @@ function phase3ToggleArchiveActiveProject_(){
     const counts = computeProjectCounts(p);
     const open = Math.max(0, counts.tasks - counts.done);
     if(open > 0){
-      const ok = confirm(`Archive "${p.name}" with ${open} open task(s)?`);
+      const ok = await pmConfirmDialog_(`Archive "${p.name}" with ${open} open task(s)?`, { title:'Archive Project', okText:'Archive' });
       if(!ok) return;
     }
   }
@@ -4615,10 +5446,10 @@ function phase3Templates_(){
   ];
 }
 
-function phase3OpenTemplatePrompt_(){
+async function phase3OpenTemplatePrompt_(){
   const templates = phase3Templates_();
   const lines = templates.map((t, i) => `${i + 1}. ${t.name} — ${t.summary}`);
-  const ans = prompt(`Create project from template:\n\n${lines.join("\n")}\n\nEnter number or key`, "1");
+  const ans = await pmPromptDialog_(`Create project from template:\n\n${lines.join("\n")}\n\nEnter number or key`, '1', { title:'Project Templates', placeholder:'1 / key' });
   if(ans == null) return;
   const raw = String(ans).trim().toLowerCase();
   if(!raw) return;
@@ -4631,12 +5462,12 @@ function phase3OpenTemplatePrompt_(){
     alert("Template not found.");
     return;
   }
-  phase3CreateProjectFromTemplate_(tpl);
+  await phase3CreateProjectFromTemplate_(tpl);
 }
 
-function phase3CreateProjectFromTemplate_(tpl){
+async function phase3CreateProjectFromTemplate_(tpl){
   if(!tpl) return;
-  const customName = prompt("Project name?", tpl.name);
+  const customName = await pmPromptDialog_('Project name?', tpl.name, { title:'Create Project From Template', placeholder:'Project name' });
   if(customName == null) return;
   const name = String(customName).trim() || tpl.name;
 
@@ -5060,7 +5891,7 @@ function phase4PatchFunctions_(){
   // Bulk done should skip blocked tasks
   if(typeof phase3BulkSetTaskDone_ === 'function'){
     const _bulk = phase3BulkSetTaskDone_;
-    phase3BulkSetTaskDone_ = function(done){
+    phase3BulkSetTaskDone_ = async function(done){
       if(!done) return _bulk(done);
       const ctx = phase3GetChecklistContext_ ? phase3GetChecklistContext_() : null;
       const m = ctx && ctx.m;
@@ -5075,7 +5906,10 @@ function phase4PatchFunctions_(){
       });
       if(blocked.length){
         const names = blocked.slice(0,3).map(id => byId.get(id)?.title || id).join(', ');
-        const ok = confirm(`Some selected task(s) are blocked and will be skipped.\nBlocked: ${blocked.length}${names ? `\nExamples: ${names}` : ''}\n\nContinue?`);
+        const ok = await pmConfirmDialog_(`Some selected task(s) are blocked and will be skipped.\nBlocked: ${blocked.length}${names ? `\nExamples: ${names}` : ''}\n\nContinue?`, {
+          title:'Bulk Complete • Blocked Tasks',
+          okText:'Continue'
+        });
         if(!ok) return;
       }
       phase4State_.suppressTaskCheckGuard = true;
@@ -5377,7 +6211,7 @@ function phase4RenderTimeline_(){
   });
 }
 
-function phase4OpenTaskPlanner_(task){
+async function phase4OpenTaskPlanner_(task){
   const ctx = phase3GetChecklistContext_ ? phase3GetChecklistContext_() : null;
   const m = ctx && ctx.m;
   if(!task || !m) return;
@@ -5385,7 +6219,7 @@ function phase4OpenTaskPlanner_(task){
 
   // Due date prompt
   const currentDue = task.dueAt ? phase4FmtDate_(task.dueAt) : '';
-  const dueInput = prompt(`Set due date for task (YYYY-MM-DD).\nLeave blank to clear.`, currentDue);
+  const dueInput = await pmPromptDialog_(`Set due date for task (YYYY-MM-DD).\nLeave blank to clear.`, currentDue, { title:'Task Planner • Due Date', placeholder:'YYYY-MM-DD' });
   if(dueInput === null) return; // cancel entire planner
   const dueTrim = String(dueInput || '').trim();
   if(!dueTrim){
@@ -5400,11 +6234,12 @@ function phase4OpenTaskPlanner_(task){
   const candidates = (m.tasks || []).filter(x => x.id !== task.id);
   const lines = candidates.map((x, i) => `${i+1}. ${x.done ? '[✓]' : '[ ]'} ${x.title}`).join('\n');
   const currentIdxCsv = (task.blockedBy || []).map(id => String(candidates.findIndex(x => x.id === id) + 1)).filter(x => x !== '0').join(',');
-  const blockerInput = prompt(
+  const blockerInput = await pmPromptDialog_(
     `Dependencies / blockers (same milestone only). Enter numbers separated by commas.\nLeave blank for none.\n\n${lines || '(No other tasks available)'}`,
-    currentIdxCsv
+    currentIdxCsv,
+    { title:'Task Planner • Dependencies', placeholder:'e.g. 1,2,4' }
   );
-  if(blockerInput === null) return; // treat cancel as cancel after due change? keep due change? We'll keep due already changed intentionally
+  if(blockerInput === null) return; // keep due change already made intentionally
 
   const nextBlocked = [];
   const raw = String(blockerInput || '').trim();
@@ -5417,7 +6252,7 @@ function phase4OpenTaskPlanner_(task){
   }
   task.blockedBy = nextBlocked;
 
-  const noteInput = prompt('Optional blocker note (why blocked / waiting on what). Leave blank to clear.', task.blockerNote || '');
+  const noteInput = await pmPromptDialog_('Optional blocker note (why blocked / waiting on what). Leave blank to clear.', task.blockerNote || '', { title:'Task Planner • Blocker Note', placeholder:'Optional note' });
   if(noteInput !== null){
     task.blockerNote = String(noteInput || '').trim();
   }
@@ -5515,9 +6350,9 @@ function phase4ApplySelectedView_(){
   addActivity(`Applied view: ${view.name || key}`);
 }
 
-function phase4SaveViewPrompt_(){
-  const name = prompt('Save current checklist filters as view name?', 'My View');
-  if(!name) return;
+async function phase4SaveViewPrompt_(){
+  const name = await pmPromptDialog_('Save current checklist filters as view name?', 'My View', { title:'Save Checklist View', placeholder:'View name' });
+  if(name == null) return;
   const key = String(name).trim();
   if(!key) return;
   const view = phase4GetCurrentViewState_();
@@ -5530,7 +6365,7 @@ function phase4SaveViewPrompt_(){
   addActivity(`Saved view: ${key}`);
 }
 
-function phase4DeleteSelectedView_(){
+async function phase4DeleteSelectedView_(){
   const sel = document.querySelector('#phase4ViewPreset');
   if(!sel || !sel.value) return;
   const key = sel.value;
@@ -5539,7 +6374,7 @@ function phase4DeleteSelectedView_(){
     return;
   }
   if(!phase4State_.savedViews[key]) return;
-  const ok = confirm(`Delete saved view "${key}"?`);
+  const ok = await pmConfirmDialog_(`Delete saved view "${key}"?`, { title:'Delete Checklist View', okText:'Delete', danger:true });
   if(!ok) return;
   delete phase4State_.savedViews[key];
   phase4PersistViews_();
@@ -5547,7 +6382,7 @@ function phase4DeleteSelectedView_(){
   addActivity(`Deleted view: ${key}`);
 }
 
-function phase4OpenIntegrityReport_(){
+async function phase4OpenIntegrityReport_(){
   const report = phase4ScanIntegrity_();
   const lines = [];
   lines.push('Phase 4 Integrity Scan');
@@ -5569,10 +6404,10 @@ function phase4OpenIntegrityReport_(){
     if(report.warnings.length > 20) lines.push(`…and ${report.warnings.length - 20} more`);
   }
 
-  alert(lines.join('\n'));
+  await pmAlertDialog_(lines.join('\n'), { title:'Phase 4 Integrity Scan' });
 
   if(report.fixableCount > 0){
-    const ok = confirm(`Apply safe repairs now?\n\nThis will normalize Phase 4 task metadata and remove invalid blocker references.\nFixable items: ${report.fixableCount}`);
+    const ok = await pmConfirmDialog_(`Apply safe repairs now?\n\nThis will normalize Phase 4 task metadata and remove invalid blocker references.\nFixable items: ${report.fixableCount}`, { title:'Integrity Repair', okText:'Apply Repairs' });
     if(ok){
       const fixed = phase4RepairIntegrity_();
       if(fixed > 0){
@@ -6611,7 +7446,7 @@ function phase5ApplyPendingAddMeta_(){
   renderAll();
 }
 
-function phase5SaveTemplateFromForm_(){
+async function phase5SaveTemplateFromForm_(){
   const title = String(ui?.taskText?.value || '').trim();
   if(!title){
     alert('Enter a task title first (in Add Task) before saving as a template.');
@@ -6619,8 +7454,8 @@ function phase5SaveTemplateFromForm_(){
     return;
   }
 
-  const ask = prompt('Template name?', title);
-  if(!ask) return;
+  const ask = await pmPromptDialog_('Template name?', title, { title:'Save Recurring Template', placeholder:'Template name' });
+  if(ask == null) return;
   const name = String(ask || '').trim();
   if(!name) return;
 
@@ -6639,7 +7474,7 @@ function phase5SaveTemplateFromForm_(){
   const arr = phase5GetTemplates_();
   const idx = arr.findIndex(x => x.name.toLowerCase() === name.toLowerCase());
   if(idx >= 0){
-    const ok = confirm(`Template "${name}" already exists. Replace it?`);
+    const ok = await pmConfirmDialog_(`Template "${name}" already exists. Replace it?`, { title:'Replace Template', okText:'Replace', danger:true });
     if(!ok) return;
     tpl.id = arr[idx].id;
     arr[idx] = tpl;
@@ -6670,14 +7505,15 @@ function phase5LoadTemplateIntoForm_(){
   pulseDirty();
 }
 
-function phase5DeleteSelectedTemplate_(){
+async function phase5DeleteSelectedTemplate_(){
   const sel = document.querySelector('#phase5TemplateSelect');
   const id = String(sel?.value || '');
   if(!id) return;
   const arr = phase5GetTemplates_();
   const tpl = arr.find(x => x.id === id);
   if(!tpl) return;
-  if(!confirm(`Delete template "${tpl.name}"?`)) return;
+  const ok = await pmConfirmDialog_(`Delete template "${tpl.name}"?`, { title:'Delete Recurring Template', okText:'Delete', danger:true });
+  if(!ok) return;
   phase5SaveTemplates_(arr.filter(x => x.id !== id));
   phase5RefreshTemplateSelect_();
   addActivity(`Deleted recurring template: ${tpl.name}`);
@@ -7500,7 +8336,7 @@ function phase6ScrollToTask_(taskId){
   }, 20);
 }
 
-function phase6RepairCyclesPrompt_(){
+async function phase6RepairCyclesPrompt_(){
   const ctx = phase6GetChecklistContext_();
   const m = ctx && ctx.m;
   if(!m){ alert('Select an active milestone first.'); return; }
@@ -7516,7 +8352,10 @@ function phase6RepairCyclesPrompt_(){
   }
 
   const preview = removable.slice(0,6).map(e => `${graph.byId.get(e.from)?.title || e.from} -> ${graph.byId.get(e.to)?.title || e.to}`).join('\n');
-  const ok = confirm(`Repair dependency cycles by removing ${removable.length} back-edge(s)?\n\n${preview}${removable.length > 6 ? '\n…' : ''}`);
+  const ok = await pmConfirmDialog_(`Repair dependency cycles by removing ${removable.length} back-edge(s)?\n\n${preview}${removable.length > 6 ? '\n…' : ''}`, {
+    title:'Repair Dependency Cycles',
+    okText:'Repair'
+  });
   if(!ok) return;
 
   let removed = 0;
@@ -7641,7 +8480,7 @@ function phase6RenderWorkloadPlanner_(){
   `;
 
   Array.from(table.querySelectorAll('[data-assignee]')).forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const name = btn.getAttribute('data-assignee') || '';
       const activeProject = getActiveProject();
       if(!activeProject){ switchTab('checklist'); return; }
@@ -7789,14 +8628,14 @@ function phase6RenderSnapshotList_(){
   list.dataset.selectedId = selectedId;
 }
 
-function phase6CreateSnapshotPrompt_(){
+async function phase6CreateSnapshotPrompt_(){
   const p = getActiveProject();
-  if(!p){ alert('Select an active project first.'); return; }
+  if(!p){ await pmAlertDialog_('Select an active project first.', { title:'Create Snapshot' }); return; }
   const defaultName = `Snapshot ${new Date().toLocaleString()}`;
-  const name = prompt('Snapshot name?', defaultName);
+  const name = await pmPromptDialog_('Snapshot name?', defaultName, { title:'Create Snapshot', placeholder:'Snapshot name' });
   if(name === null) return;
   const trimmed = String(name || '').trim() || defaultName;
-  const note = prompt('Optional snapshot note (what changed / why)?', '') ;
+  const note = await pmPromptDialog_('Optional snapshot note (what changed / why)?', '', { title:'Create Snapshot', placeholder:'Optional note' });
   if(note === null) return;
 
   // Make sure latest project settings UI values are captured if user is editing in Projects tab
@@ -7819,26 +8658,26 @@ function phase6GetSelectedSnapshot_(){
   return snaps.find(s => s.id === selectedId) || snaps[0] || null;
 }
 
-function phase6RestoreSelectedSnapshot_(){
+async function phase6RestoreSelectedSnapshot_(){
   const p = getActiveProject();
-  if(!p){ alert('Select an active project first.'); return; }
+  if(!p){ await pmAlertDialog_('Select an active project first.', { title:'Restore Snapshot' }); return; }
   const snap = phase6GetSelectedSnapshot_();
-  if(!snap){ alert('No snapshot selected.'); return; }
-  const ok = confirm(`Restore snapshot "${snap.name}" for project "${p.name}"?\n\nCurrent project state will be replaced.`);
+  if(!snap){ await pmAlertDialog_('No snapshot selected.', { title:'Restore Snapshot' }); return; }
+  const ok = await pmConfirmDialog_(`Restore snapshot "${snap.name}" for project "${p.name}"?\n\nCurrent project state will be replaced.`, { title:'Restore Snapshot', okText:'Restore', danger:true });
   if(!ok) return;
 
   let restored = null;
   try{
     restored = sanitizeProject(JSON.parse(JSON.stringify(snap.project || {})));
   }catch(err){
-    alert('Snapshot is invalid/corrupted and could not be restored.');
+    await pmAlertDialog_('Snapshot is invalid/corrupted and could not be restored.', { title:'Restore Snapshot' });
     return;
   }
   // keep current project id stable if snapshot id differs
   restored.id = p.id;
 
   const idx = state.projects.findIndex(x => x && x.id === p.id);
-  if(idx < 0){ alert('Active project not found.'); return; }
+  if(idx < 0){ await pmAlertDialog_('Active project not found.', { title:'Restore Snapshot' }); return; }
   state.projects[idx] = restored;
 
   // Reset active selections to valid objects from restored project
@@ -7852,12 +8691,12 @@ function phase6RestoreSelectedSnapshot_(){
   renderAll();
 }
 
-function phase6DeleteSelectedSnapshot_(){
+async function phase6DeleteSelectedSnapshot_(){
   const p = getActiveProject();
-  if(!p){ alert('Select an active project first.'); return; }
+  if(!p){ await pmAlertDialog_('Select an active project first.', { title:'Delete Snapshot' }); return; }
   const snap = phase6GetSelectedSnapshot_();
-  if(!snap){ alert('No snapshot selected.'); return; }
-  const ok = confirm(`Delete snapshot "${snap.name}"?`);
+  if(!snap){ await pmAlertDialog_('No snapshot selected.', { title:'Delete Snapshot' }); return; }
+  const ok = await pmConfirmDialog_(`Delete snapshot "${snap.name}"?`, { title:'Delete Snapshot', okText:'Delete', danger:true });
   if(!ok) return;
   const snaps = phase6LoadSnapshotsForProject_(p.id).filter(s => s.id !== snap.id);
   phase6SaveSnapshotsForProject_(p.id, snaps);
@@ -8693,7 +9532,7 @@ function phase7FillBlueprintSelect_(selQuery, arr, placeholder){
   if((arr || []).some(b => b.id === prev)) sel.value = prev;
 }
 
-function phase7SaveBlueprintFromActive_(type){
+async function phase7SaveBlueprintFromActive_(type){
   let payload = null;
   let defaultName = '';
   if(type === 'project'){
@@ -8712,15 +9551,16 @@ function phase7SaveBlueprintFromActive_(type){
     payload = JSON.parse(JSON.stringify(ms));
     defaultName = `${ms.title} Blueprint`;
   }
-  const name = prompt('Blueprint name?', defaultName);
+  const name = await pmPromptDialog_('Blueprint name?', defaultName, { title:'Save Blueprint', placeholder:'Blueprint name' });
   if(name === null) return;
   const trimmed = String(name || '').trim() || defaultName;
-  const note = prompt('Optional note / usage hint?', '') || '';
+  const note = (await pmPromptDialog_('Optional note / usage hint?', '', { title:'Save Blueprint', placeholder:'Optional note (optional)' })) || '';
   const arr = phase7LoadBlueprints_();
   const existing = arr.find(x => x.type === type && x.name.toLowerCase() === trimmed.toLowerCase());
   const bp = phase7SanitizeBlueprint_({ id: existing?.id || uid(), type, name: trimmed, note, ts: Date.now(), payload });
   if(existing){
-    if(!confirm(`Replace existing ${type} blueprint "${trimmed}"?`)) return;
+    const okReplace = await pmConfirmDialog_(`Replace existing ${type} blueprint "${trimmed}"?`, { title:'Replace Blueprint', okText:'Replace', danger:true });
+    if(!okReplace) return;
     const idx = arr.findIndex(x => x.id === existing.id);
     if(idx >= 0) arr[idx] = bp;
   } else arr.unshift(bp);
@@ -8736,10 +9576,11 @@ function phase7GetSelectedBlueprint_(type){
   return phase7LoadBlueprints_().find(x => x.id === id && x.type === type) || null;
 }
 
-function phase7DeleteSelectedBlueprint_(type){
+async function phase7DeleteSelectedBlueprint_(type){
   const bp = phase7GetSelectedBlueprint_(type);
   if(!bp){ alert('Select a blueprint first.'); return; }
-  if(!confirm(`Delete ${type} blueprint "${bp.name}"?`)) return;
+  const okDelete = await pmConfirmDialog_(`Delete ${type} blueprint "${bp.name}"?`, { title:'Delete Blueprint', okText:'Delete', danger:true });
+  if(!okDelete) return;
   phase7SaveBlueprints_(phase7LoadBlueprints_().filter(x => x.id !== bp.id));
   phase7RenderBlueprintsUi_();
   addActivity(`Deleted ${type} blueprint: ${bp.name}`);
@@ -8862,15 +9703,16 @@ function phase7CloneProjectFresh_(p, opts){
   };
 }
 
-function phase7ApplySelectedBlueprint_(type){
+async function phase7ApplySelectedBlueprint_(type){
   const bp = phase7GetSelectedBlueprint_(type);
   if(!bp){ alert('Select a blueprint first.'); return; }
-  const resetDone = confirm('Apply as a fresh blueprint instance with progress reset?\n\nOK = reset done states (recommended)\nCancel = keep current task done states from blueprint');
+  const resetDone = await pmConfirmDialog_('Apply as a fresh blueprint instance with progress reset?\n\nOK = reset done states (recommended)\nCancel = keep current task done states from blueprint', { title:'Apply Blueprint', okText:'Reset Progress' });
   const opts = { resetDone };
 
   if(type === 'project'){
     const p = phase7CloneProjectFresh_(bp.payload || {}, opts);
-    p.name = prompt('New project name?', p.name.replace(/\s*Blueprint$/i,'')) || p.name;
+    const nextProjectName = await pmPromptDialog_('New project name?', p.name.replace(/\s*Blueprint$/i,''), { title:'Apply Project Blueprint', placeholder:'Project name' });
+    p.name = nextProjectName || p.name;
     state.projects.unshift(p);
     setActiveProject(p.id);
     addActivity(`Applied project blueprint: ${bp.name}`);
@@ -9084,14 +9926,14 @@ function phase7ExportV2Bundle_(){
   try{ saveState({ immediate:true }); }catch{}
 }
 
-function phase7ImportV2BundleFromText_(text, filename){
+async function phase7ImportV2BundleFromText_(text, filename){
   let bundle = null;
   try{ bundle = JSON.parse(String(text || '')); }catch{ alert('Invalid JSON file.'); return; }
   if(!bundle || typeof bundle !== 'object' || bundle.type !== 'stark_pm_bundle_v2'){
     alert('This file is not a valid Stark PM V2 bundle.');
     return;
   }
-  const ok = confirm(`Import V2 bundle${filename ? ` (${filename})` : ''}?\n\nThis will replace your current local PM state and restore included local templates/snapshots/capacity settings.`);
+  const ok = await pmConfirmDialog_(`Import V2 bundle${filename ? ` (${filename})` : ''}?\n\nThis will replace your current local PM state and restore included local templates/snapshots/capacity settings.`, { title:'Import V2 Bundle', okText:'Import', danger:true });
   if(!ok) return;
 
   let nextState = null;
@@ -9247,14 +10089,14 @@ function phase8PatchFunctions_(){
 
   if(typeof phase7ImportV2BundleFromText_ === 'function' && !phase7ImportV2BundleFromText_._phase8Wrapped){
     const baseImport = phase7ImportV2BundleFromText_;
-    phase7ImportV2BundleFromText_ = function(text, filename){
+    phase7ImportV2BundleFromText_ = async function(text, filename){
       let bundle = null;
       try{ bundle = JSON.parse(String(text || '')); }catch{ alert('Invalid JSON file.'); return; }
       if(!bundle || bundle.type !== 'stark_pm_bundle_v2'){
         return baseImport(text, filename);
       }
       const preview = phase8BuildBundleDiffPreview_(bundle);
-      const ok = confirm(`Phase 8 Import Dry-Run Preview${filename ? ` (${filename})` : ''}\n\n${preview}\n\nProceed to import?`);
+      const ok = await pmConfirmDialog_(`Phase 8 Import Dry-Run Preview${filename ? ` (${filename})` : ''}\n\n${preview}\n\nProceed to import?`, { title:'Import Dry-Run Preview', okText:'Proceed Import' });
       if(!ok) return;
       return baseImport(text, filename);
     };
@@ -9301,7 +10143,7 @@ function phase8EnsureTopbarButtons_(){
     btn.className = 'btn btn--ghost';
     btn.type = 'button';
     btn.textContent = 'Notifications';
-    btn.addEventListener('click', () => { switchTab('dashboard'); setTimeout(()=>document.querySelector('#phase8NotificationsPanel')?.scrollIntoView({behavior:'smooth', block:'start'}),10); });
+    btn.addEventListener('click', () => { openPanelInOwningTab_('#phase8NotificationsPanel', 'dashboard', 10); });
     const anchor = document.querySelector('#phase7BtnImportV2') || document.querySelector('#btnExportJson');
     topbar.insertBefore(btn, anchor || null);
   }
@@ -9471,12 +10313,12 @@ function phase8ApplyChecklistViewKey_(key){
   }, 10);
 }
 
-function phase8PinCurrentChecklistView_(){
+async function phase8PinCurrentChecklistView_(){
   if(typeof phase4GetCurrentViewState_ !== 'function'){
     alert('Checklist view saving is not available yet.');
     return;
   }
-  const name = prompt('Pin current checklist view as:', 'Pinned View');
+  const name = await pmPromptDialog_('Pin current checklist view as:', 'Pinned View', { title:'Pin Checklist View', placeholder:'Pinned view name' });
   if(name == null) return;
   const n = String(name).trim();
   if(!n) return;
@@ -9499,11 +10341,11 @@ function phase8PinCurrentChecklistView_(){
   phase8RenderSavedViewsPanel_();
 }
 
-function phase8PromptRemovePinnedView_(){
+async function phase8PromptRemovePinnedView_(){
   const arr = phase8LoadPinnedViews_();
   if(!arr.length){ alert('No pinned views to remove.'); return; }
   const menu = arr.map((x,i)=>`${i+1}. ${x.name}`).join('\n');
-  const ans = prompt(`Remove which pinned view?\n\n${menu}`, '1');
+  const ans = await pmPromptDialog_(`Remove which pinned view?\n\n${menu}`, '1', { title:'Remove Pinned View', placeholder:'Enter number' });
   if(ans == null) return;
   const idx = Number(ans)-1;
   if(!Number.isInteger(idx) || idx < 0 || idx >= arr.length){ alert('Invalid selection.'); return; }
@@ -9878,11 +10720,14 @@ function phase8RenderDepsPanel_(){
     addActivity(`Phase8 cleared invalid/self/duplicate blockers on ${changed} task(s)`);
     if(changed){ saveState(); renderChecklist(); }
   });
-  box.querySelector('#phase8BtnDepRepairCycles')?.addEventListener('click', () => {
+  box.querySelector('#phase8BtnDepRepairCycles')?.addEventListener('click', async () => {
     if(!m) return;
     const info = phase8FindDependencyCycleEdges_(m);
     if(!info.edges.length){ alert('No cycle edges detected.'); return; }
-    if(!confirm(`Repair ${info.edges.length} detected cycle edge(s)? This removes back-edges from blockedBy lists.`)) return;
+    if(!(await pmConfirmDialog_(`Repair ${info.edges.length} detected cycle edge(s)? This removes back-edges from blockedBy lists.`, {
+      title:'Dependency Health',
+      okText:'Repair'
+    }))) return;
     let changed = 0;
     const removeByTask = new Map();
     for(const edge of info.edges){
@@ -9942,7 +10787,7 @@ function phase8FindDependencyCycleEdges_(m){
   return result;
 }
 
-function phase8BatchEditSelectedTasks_(mode){
+async function phase8BatchEditSelectedTasks_(mode){
   const { m } = phase8ChecklistContext_();
   if(!m) return;
   let selected = [];
@@ -9955,7 +10800,10 @@ function phase8BatchEditSelectedTasks_(mode){
   const setIds = new Set(selected);
   let changed = 0;
   if(mode === 'shiftDue'){
-    const raw = prompt('Shift due dates by how many days? (Use negative to pull earlier)', '1');
+    const raw = await pmPromptDialog_('Shift due dates by how many days? (Use negative to pull earlier)', '1', {
+      title:'Shift Due Dates',
+      placeholder:'e.g. 1 or -2'
+    });
     if(raw == null) return;
     const n = Number(raw);
     if(!Number.isFinite(n) || !Number.isInteger(n)){ alert('Enter a whole number of days.'); return; }
@@ -10283,7 +11131,7 @@ function phase9EnhanceTaskCards_(){
   }
 }
 
-function phase9OpenTaskCommentsPrompt_(t){
+async function phase9OpenTaskCommentsPrompt_(t){
   if(!t) return;
   const comments = phase9EnsureTaskComments_(t);
   const lines = comments.slice(-12).map((c, i) => {
@@ -10292,16 +11140,21 @@ function phase9OpenTaskCommentsPrompt_(t){
     return `${i+1}. [${when}] ${String(c.author || 'ME')}: ${String(c.text || '')}`;
   });
   const summary = lines.length ? lines.join('\n') : '(no comments yet)';
-  const input = prompt(
+  const input = await pmPromptDialog_(
     `Task thread: ${t.title}\n\nRecent entries:\n${summary}\n\nEnter a new comment to append.\nOptional format: author | message\nCommands: /clear  /export`,
-    ''
+    '',
+    { title:'Task Thread', placeholder:'author | message  (or /clear /export)' }
   );
   if(input == null) return;
   const raw = String(input || '').trim();
   if(!raw) return;
   if(raw === '/clear'){
     if(!comments.length){ alert('No comments to clear.'); return; }
-    if(!confirm(`Clear all ${comments.length} comment(s) for "${t.title}"?`)) return;
+    if(!(await pmConfirmDialog_(`Clear all ${comments.length} comment(s) for "${t.title}"?`, {
+      title:'Clear Task Thread',
+      okText:'Clear',
+      danger:true
+    }))) return;
     t.comments = [];
     addActivity(`Cleared task thread: ${t.title}`);
     saveState();
@@ -10309,7 +11162,7 @@ function phase9OpenTaskCommentsPrompt_(t){
     return;
   }
   if(raw === '/export'){
-    phase9ExportTaskThread_(t);
+    await phase9ExportTaskThread_(t);
     return;
   }
   let author = 'ME';
@@ -10328,11 +11181,14 @@ function phase9OpenTaskCommentsPrompt_(t){
   renderChecklist();
 }
 
-function phase9ExportTaskThread_(t){
+async function phase9ExportTaskThread_(t){
   if(!t) return;
   const comments = phase9EnsureTaskComments_(t);
   if(!comments.length){ alert('No comments to export for this task.'); return; }
-  const fmt = prompt('Export task thread as TXT or JSON?', 'TXT');
+  const fmt = await pmPromptDialog_('Export task thread as TXT or JSON?', 'TXT', {
+    title:'Export Task Thread',
+    placeholder:'TXT or JSON'
+  });
   if(fmt == null) return;
   const kind = String(fmt || '').trim().toLowerCase();
   const safeTask = String(t.title || 'task').replace(/[^a-z0-9\-_]+/ig, '_').slice(0,60) || 'task';
@@ -10500,13 +11356,16 @@ function phase9BatchAssignSelected_(mode, assigneeValue){
   if(changed){ saveState(); renderChecklist(); }
 }
 
-function phase9PromptRebalanceSelected_(){
+async function phase9PromptRebalanceSelected_(){
   const { p, m } = phase9ChecklistContext_();
   if(!m){ alert('Select a project and milestone first.'); return; }
   const ids = phase9GetSelectedOrVisibleTaskIds_(m, true);
   if(!ids.length){ alert('No selected (or visible) tasks to rebalance.'); return; }
   const seed = phase9BuildAssigneeStats_(m.tasks || []).map(x=>x.name).filter(n=>n !== 'Unassigned').slice(0,6).join(', ');
-  const raw = prompt('Rebalance across which assignees? (comma-separated)', seed || 'Alice, Bob');
+  const raw = await pmPromptDialog_('Rebalance across which assignees? (comma-separated)', seed || 'Alice, Bob', {
+    title:'Rebalance Assignees',
+    placeholder:'Alice, Bob'
+  });
   if(raw == null) return;
   const names = Array.from(new Set(String(raw).split(',').map(s=>s.trim()).filter(Boolean)));
   if(!names.length){ alert('Enter at least one assignee.'); return; }
@@ -10674,9 +11533,12 @@ function phase9PostRenderNotificationsPanel_(){
     btn.dataset.act = 'phase9Snooze';
     btn.textContent = 'Snooze';
     btn.title = 'Temporarily hide this notification';
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const cfg = phase9LoadReminderCfg_();
-      const hoursRaw = prompt('Snooze for how many hours?', String(Math.max(1, Number(cfg.defaultSnoozeHours || 12) || 12)));
+      const hoursRaw = await pmPromptDialog_('Snooze for how many hours?', String(Math.max(1, Number(cfg.defaultSnoozeHours || 12) || 12)), {
+        title:'Snooze Notification',
+        placeholder:'Hours'
+      });
       if(hoursRaw == null) return;
       const h = Number(hoursRaw);
       if(!Number.isFinite(h) || h <= 0){ alert('Enter a positive number of hours.'); return; }
@@ -10793,8 +11655,8 @@ function phase9CollectAuditRows_(query){
   return (state.activity || []).filter(a => !q || String(a?.msg || '').toLowerCase().includes(q));
 }
 
-function phase9PromptExportAudit_(){
-  const kindRaw = prompt('Export audit trail as TXT or JSON?', 'TXT');
+async function phase9PromptExportAudit_(){
+  const kindRaw = await pmPromptDialog_('Export audit trail as TXT or JSON?', 'TXT', { title:'Audit Export', placeholder:'TXT or JSON' });
   if(kindRaw == null) return;
   const kind = String(kindRaw || '').trim().toLowerCase() === 'json' ? 'json' : 'txt';
   phase9ExportAuditTrail_(kind);
@@ -10834,7 +11696,7 @@ function phase9EnsureTopbarButtons_(){
     btn.type = 'button';
     btn.textContent = 'Reminder Rules';
     btn.title = 'Open Phase 9 reminder rules panel';
-    btn.addEventListener('click', () => { switchTab('dashboard'); setTimeout(()=>document.querySelector('#phase9ReminderRulesPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 10); });
+    btn.addEventListener('click', () => { openPanelInOwningTab_('#phase9ReminderRulesPanel', 'dashboard', 10); });
     topbarRight.appendChild(btn);
   }
   if(!document.querySelector('#phase9BtnAuditExport')){
@@ -10852,15 +11714,15 @@ function phase9EnsureTopbarButtons_(){
 function phase9WrapSnapshotRestore_(){
   if(typeof phase6RestoreSelectedSnapshot_ !== 'function') return;
   const _orig = phase6RestoreSelectedSnapshot_;
-  phase6RestoreSelectedSnapshot_ = function(){
+  phase6RestoreSelectedSnapshot_ = async function(){
     const p = getActiveProject();
     if(!p){ alert('Select an active project first.'); return; }
     const snap = (typeof phase6GetSelectedSnapshot_ === 'function') ? phase6GetSelectedSnapshot_() : null;
-    if(!snap){ alert('No snapshot selected.'); return; }
+    if(!snap){ await pmAlertDialog_('No snapshot selected.', { title:'Restore Snapshot' }); return; }
 
     let restored = null;
     try{ restored = sanitizeProject(JSON.parse(JSON.stringify(snap.project || {}))); }
-    catch(err){ alert('Snapshot is invalid/corrupted and could not be restored.'); return; }
+    catch(err){ await pmAlertDialog_('Snapshot is invalid/corrupted and could not be restored.', { title:'Restore Snapshot' }); return; }
 
     let preview = '';
     try{
@@ -10891,13 +11753,13 @@ function phase9WrapSnapshotRestore_(){
     if(!preview){
       preview = `Restore snapshot "${snap.name}" for project "${p.name}"?\n\nCurrent project state will be replaced.`;
     }
-    const ok = confirm(preview);
+    const ok = await pmConfirmDialog_(preview, { title:'Snapshot Restore Preview', okText:'Restore', danger:true });
     if(!ok) return;
 
     // Re-implement restore path to avoid double confirm from original function.
     restored.id = p.id;
     const idx = state.projects.findIndex(x => x && x.id === p.id);
-    if(idx < 0){ alert('Active project not found.'); return; }
+    if(idx < 0){ await pmAlertDialog_('Active project not found.', { title:'Restore Snapshot' }); return; }
     state.projects[idx] = restored;
     const firstMod = restored.modules?.[0] || null;
     state.activeModuleId = firstMod?.id || null;
@@ -11089,7 +11951,7 @@ function phase10EnsureTopbarButtons_(){
     btn.type = 'button';
     btn.textContent = 'Recovery';
     btn.title = 'Open recovery tools panel';
-    btn.addEventListener('click', () => { switchTab('dashboard'); setTimeout(()=>document.querySelector('#phase10RecoveryPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 10); });
+    btn.addEventListener('click', () => { openPanelInOwningTab_('#phase10RecoveryPanel', 'dashboard', 10); });
     topbarRight.appendChild(btn);
   }
 }
@@ -11193,14 +12055,36 @@ function phase10InstallApprovalGateInterceptors_(){
     }
 
     if(!msgs.length) return;
-    msgs.push('Mark task as done anyway?');
-    const ok = confirm(msgs.join('\n'));
-    if(!ok){
+    if(check.__phase10ApprovalBypassOnce){
+      try{ delete check.__phase10ApprovalBypassOnce; }catch{ check.__phase10ApprovalBypassOnce = false; }
+      return;
+    }
+    if(check.__phase10ApprovalPending){
       e.preventDefault();
       e.stopImmediatePropagation();
-    } else {
-      try{ addActivity(`Phase10 approval gate passed: close task ${t.title}`); }catch{}
+      return;
     }
+    msgs.push('Mark task as done anyway?');
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    check.__phase10ApprovalPending = true;
+    Promise.resolve().then(async () => {
+      const ok = await pmConfirmDialog_(msgs.join('\n'), {
+        title:'Approval Gate • Task Close',
+        okText:'Mark Done'
+      });
+      if(ok){
+        try{ addActivity(`Phase10 approval gate passed: close task ${t.title}`); }catch{}
+        try{ check.__phase10ApprovalBypassOnce = true; }catch{}
+        try{ check.click(); }catch{
+          try{ check.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true })); }catch{}
+        }
+      }
+    }).finally(() => {
+      setTimeout(() => {
+        try{ check.__phase10ApprovalPending = false; }catch{}
+      }, 0);
+    });
   }, true);
 
   document.addEventListener('click', (e) => {
@@ -11220,14 +12104,36 @@ function phase10InstallApprovalGateInterceptors_(){
     if(cfg.confirmMilestoneDoneWithOpenTasks && open.length) msgs.push(`Milestone still has ${open.length} open task(s).`);
     if(cfg.confirmMilestoneDoneWithBlockers && blockerOpen.length) msgs.push(`Milestone still has ${blockerOpen.length} open blocker task(s).`);
     if(!msgs.length) return;
-    msgs.push('Save milestone as DONE anyway?');
-    const ok = confirm(msgs.join('\n'));
-    if(!ok){
+    if(btn.__phase10ApprovalBypassOnce){
+      try{ delete btn.__phase10ApprovalBypassOnce; }catch{ btn.__phase10ApprovalBypassOnce = false; }
+      return;
+    }
+    if(btn.__phase10ApprovalPending){
       e.preventDefault();
       e.stopImmediatePropagation();
-    } else {
-      try{ addActivity(`Phase10 approval gate passed: milestone done ${m.title}`); }catch{}
+      return;
     }
+    msgs.push('Save milestone as DONE anyway?');
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    btn.__phase10ApprovalPending = true;
+    Promise.resolve().then(async () => {
+      const ok = await pmConfirmDialog_(msgs.join('\n'), {
+        title:'Approval Gate • Milestone Done',
+        okText:'Save Done'
+      });
+      if(ok){
+        try{ addActivity(`Phase10 approval gate passed: milestone done ${m.title}`); }catch{}
+        try{ btn.__phase10ApprovalBypassOnce = true; }catch{}
+        try{ btn.click(); }catch{
+          try{ btn.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true })); }catch{}
+        }
+      }
+    }).finally(() => {
+      setTimeout(() => {
+        try{ btn.__phase10ApprovalPending = false; }catch{}
+      }, 0);
+    });
   }, true);
 }
 
@@ -11312,15 +12218,15 @@ function phase10BuildReviewIssueRows_(m){
   }
   return rows.sort((a,b)=> b.weight - a.weight || String(a.t.title).localeCompare(String(b.t.title)));
 }
-function phase10GenerateReviewTask_(mode){
+async function phase10GenerateReviewTask_(mode){
   const p = getActiveProject();
   const m = p ? getActiveMilestone(p) : null;
-  if(!p || !m){ alert('Select an active project and milestone first.'); return; }
+  if(!p || !m){ await pmAlertDialog_('Select an active project and milestone first.', { title:'Daily Review' }); return; }
   const marks = phase10LoadReviewMarks_();
   const markKey = phase10ReviewMarkKey_(mode, p, m);
   const already = marks[markKey];
   if(already){
-    const again = confirm(`A ${mode} review was already generated for this milestone (${new Date(Number(already)||Date.now()).toLocaleString()}). Generate another one anyway?`);
+    const again = await pmConfirmDialog_(`A ${mode} review was already generated for this milestone (${new Date(Number(already)||Date.now()).toLocaleString()}). Generate another one anyway?`, { title:'Generate Another Review?' });
     if(!again) return;
   }
 
@@ -11461,7 +12367,7 @@ function phase10RemapTaskTemplateLinks_(t, idMap){
     t.blockedBy = Array.from(new Set(t.blockedBy.map(x => idMap[String(x)]).filter(Boolean)));
   }
 }
-function phase10SaveTaskBundleTemplate_(){
+async function phase10SaveTaskBundleTemplate_(){
   const { m } = phase10ChecklistContext_();
   if(!m){ alert('Select an active milestone first.'); return; }
   const ids = (typeof phase9GetSelectedOrVisibleTaskIds_ === 'function') ? phase9GetSelectedOrVisibleTaskIds_(m, true) : [];
@@ -11469,8 +12375,8 @@ function phase10SaveTaskBundleTemplate_(){
   const setIds = new Set(ids);
   const tasks = (m.tasks || []).filter(t => setIds.has(t.id));
   if(!tasks.length){ alert('Could not resolve selected tasks.'); return; }
-  const name = prompt('Task bundle template name?', `Bundle • ${m.title} • ${tasks.length} task(s)`);
-  if(!name || !String(name).trim()) return;
+  const name = await pmPromptDialog_('Task bundle template name?', `Bundle • ${m.title} • ${tasks.length} task(s)`, { title:'Save Task Bundle Template', placeholder:'Template name' });
+  if(name == null || !String(name).trim()) return;
   const tpl = {
     id: uid(),
     name: String(name).trim(),
@@ -11491,12 +12397,13 @@ function phase10GetSelectedTaskTemplate_(){
   const id = String(sel?.value || '');
   return phase10LoadTaskTemplates_().find(t => String(t.id) === id) || null;
 }
-function phase10ApplyTaskBundleTemplate_(){
+async function phase10ApplyTaskBundleTemplate_(){
   const { m } = phase10ChecklistContext_();
   if(!m){ alert('Select an active milestone first.'); return; }
   const tpl = phase10GetSelectedTaskTemplate_();
   if(!tpl){ alert('Select a task bundle template first.'); return; }
-  const prefix = prompt('Optional title prefix for imported tasks (blank = none)', '');
+  const prefix = await pmPromptDialog_('Optional title prefix for imported tasks (blank = none)', '', { title:'Apply Task Bundle Template', placeholder:'Optional prefix' });
+  if(prefix === null) return;
   const idMap = Object.create(null);
   const clones = (Array.isArray(tpl.tasks) ? tpl.tasks : []).map(t => phase10CloneTaskTemplateFresh_(t, idMap));
   clones.forEach(t => { phase10RemapTaskTemplateLinks_(t, idMap); if(prefix && String(prefix).trim()) t.title = `${String(prefix).trim()} ${t.title}`; t.done = false; });
@@ -11505,10 +12412,11 @@ function phase10ApplyTaskBundleTemplate_(){
   saveState();
   renderChecklist();
 }
-function phase10DeleteTaskBundleTemplate_(){
+async function phase10DeleteTaskBundleTemplate_(){
   const tpl = phase10GetSelectedTaskTemplate_();
   if(!tpl){ alert('Select a task bundle template first.'); return; }
-  if(!confirm(`Delete task bundle template "${tpl.name}"?`)) return;
+  const ok = await pmConfirmDialog_(`Delete task bundle template "${tpl.name}"?`, { title:'Delete Task Bundle Template', okText:'Delete', danger:true });
+  if(!ok) return;
   phase10State_.templates = phase10LoadTaskTemplates_().filter(x => String(x.id) !== String(tpl.id));
   phase10SaveTaskTemplates_();
   addActivity(`Phase10 deleted task bundle template: ${tpl.name}`);
@@ -11769,8 +12677,11 @@ function phase10UpdateMentionStatus_(id, status){
   phase10RenderMentionsPanel_();
   try{ if(typeof phase8RenderNotificationsPanel_ === 'function') phase8RenderNotificationsPanel_(); }catch{}
 }
-function phase10SnoozeMention_(id){
-  const hoursRaw = prompt('Snooze mention follow-up for how many hours?', '12');
+async function phase10SnoozeMention_(id){
+  const hoursRaw = await pmPromptDialog_('Snooze mention follow-up for how many hours?', '12', {
+    title:'Snooze Mention Follow-up',
+    placeholder:'Hours'
+  });
   if(hoursRaw == null) return;
   const h = Number(hoursRaw);
   if(!Number.isFinite(h) || h <= 0){ alert('Enter a positive number of hours.'); return; }
@@ -11957,8 +12868,8 @@ function phase10ExportStatusReport_(kind){
   try{ if(typeof phase8RenderAuditPanel_ === 'function') phase8RenderAuditPanel_(); }catch{}
   try{ if(typeof phase9RenderAuditExportPanel_ === 'function') phase9RenderAuditExportPanel_(); }catch{}
 }
-function phase10PromptExportStatusReport_(){
-  const kindRaw = prompt('Export status report as TXT or MD?', 'MD');
+async function phase10PromptExportStatusReport_(){
+  const kindRaw = await pmPromptDialog_('Export status report as TXT or MD?', 'MD', { title:'Status Report Export', placeholder:'MD or TXT' });
   if(kindRaw == null) return;
   const kind = String(kindRaw || '').trim().toLowerCase() === 'txt' ? 'txt' : 'md';
   phase10ExportStatusReport_(kind);
@@ -12015,3 +12926,7170 @@ function phase10RenderRecoveryPanel_(){
 
 // boot phase 10 after phase 9 patch is loaded
 try{ initPhase10_(); }catch(err){ console.warn('Phase10 init failed', err); }
+
+
+/* ---------------------------
+   Phase 11 Team Ops + SLA Aging (Additive Patch)
+   - SLA aging rules (task/blocker/milestone stale thresholds)
+   - Stale update alerts integrated into Notifications Center (Phase 8)
+   - Saved Dashboard Views (jump presets for dashboard sections)
+---------------------------- */
+var PHASE11_SLA_CFG_KEY = 'stark_pm_phase11_sla_cfg_v1';
+var PHASE11_DASH_VIEWS_KEY = 'stark_pm_phase11_dashboard_views_v1';
+
+var phase11State_ = {
+  inited:false,
+  slaCfg:null,
+  dashViews:null,
+  scopeActiveOnly:false,
+};
+
+function initPhase11_(){
+  if(phase11State_.inited) return;
+  phase11State_.inited = true;
+  try{ phase11InjectStyles_(); }catch(err){ console.warn('Phase11 styles failed', err); }
+  try{ phase11LoadSlaCfg_(); phase11LoadDashViews_(); }catch{}
+  try{ phase11WrapCore_(); }catch(err){ console.warn('Phase11 core wrap failed', err); }
+  try{ phase11EnsureTopbarButtons_(); }catch(err){ console.warn('Phase11 topbar failed', err); }
+}
+
+function phase11InjectStyles_(){
+  if(document.querySelector('#phase11Styles')) return;
+  const style = document.createElement('style');
+  style.id = 'phase11Styles';
+  style.textContent = `
+    .phase11-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase11-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase11-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:10px}
+    .phase11-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase11-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .phase11-toolbar .input,.phase11-toolbar .select{min-width:120px}
+    .phase11-note{font-size:11px;opacity:.8;line-height:1.35}
+    .phase11-kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+    .phase11-kv > div{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase11-kv b{display:block;font-size:10px;opacity:.72;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+    .phase11-kv span{font-size:14px;font-weight:800}
+    .phase11-list{display:grid;gap:8px;margin-top:8px}
+    .phase11-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase11-row__name{font-size:12px;font-weight:700;line-height:1.25}
+    .phase11-row__meta{font-size:11px;opacity:.78;line-height:1.3;margin-top:2px}
+    .phase11-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+    .phase11-tag{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:2px 7px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+    .phase11-tag.warn{border-color:rgba(255,191,92,.25)}
+    .phase11-tag.risk{border-color:rgba(255,107,107,.28)}
+    .phase11-tag.ok{border-color:rgba(79,209,197,.25)}
+    .phase11-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+    .phase11-mini{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase11-mini h4{margin:0 0 6px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;opacity:.78}
+    .phase11-mini .phase11-list{margin-top:0}
+    .phase11-check{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.01)}
+    .phase11-inlineNum{width:86px}
+    @media (max-width: 980px){ .phase11-grid{grid-template-columns:1fr} .phase11-kv{grid-template-columns:1fr 1fr} .phase11-two{grid-template-columns:1fr} }
+    @media (max-width: 640px){ .phase11-kv{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(style);
+}
+
+function phase11WrapCore_(){
+  if(typeof renderDashboard === 'function' && !renderDashboard._phase11Wrapped){
+    const base = renderDashboard;
+    renderDashboard = function(){
+      base();
+      try{ phase11PostRenderDashboard_(); }catch(err){ console.warn('Phase11 dashboard render failed', err); }
+    };
+    renderDashboard._phase11Wrapped = true;
+  }
+
+  if(typeof phase8GenerateNotifications_ === 'function' && !phase8GenerateNotifications_._phase11WrappedSla){
+    const baseGen = phase8GenerateNotifications_;
+    phase8GenerateNotifications_ = function(){
+      const arr = Array.isArray(baseGen()) ? baseGen() : [];
+      return phase11AppendSlaNotifications_(arr);
+    };
+    phase8GenerateNotifications_._phase11WrappedSla = true;
+  }
+
+  if(typeof phase3BuildCmdkItems_ === 'function' && !phase3BuildCmdkItems_._phase11Wrapped){
+    const baseBuild = phase3BuildCmdkItems_;
+    phase3BuildCmdkItems_ = function(q){
+      const items = baseBuild(q) || [];
+      const query = String(q || '').trim().toLowerCase();
+      const cmds = [
+        { kind:'command', title:'Phase 11: SLA Aging Panel', sub:'Open dashboard SLA aging and stale alerts', tag:'PH11', act:'phase11Sla' },
+        { kind:'command', title:'Phase 11: Dashboard Views', sub:'Open saved dashboard views panel', tag:'PH11', act:'phase11DashViews' },
+      ];
+      for(const c of cmds){
+        const hay = `${c.title} ${c.sub} ${c.tag}`.toLowerCase();
+        if(!query || hay.includes(query)) items.push(c);
+      }
+      return items;
+    };
+    phase3BuildCmdkItems_._phase11Wrapped = true;
+  }
+  if(typeof phase3RunCmdkAction_ === 'function' && !phase3RunCmdkAction_._phase11Wrapped){
+    const baseRun = phase3RunCmdkAction_;
+    phase3RunCmdkAction_ = function(it){
+      if(it && it.act === 'phase11Sla'){ phase11OpenSlaPanel_(); return; }
+      if(it && it.act === 'phase11DashViews'){ phase11OpenDashViewsPanel_(); return; }
+      return baseRun(it);
+    };
+    phase3RunCmdkAction_._phase11Wrapped = true;
+  }
+}
+
+function phase11EnsureTopbarButtons_(){
+  const topbarRight = document.querySelector('.topbar__right');
+  if(!topbarRight) return;
+  if(!document.querySelector('#phase11BtnSla')){
+    const btn = document.createElement('button');
+    btn.id = 'phase11BtnSla';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'SLA';
+    btn.title = 'Open SLA aging + stale alerts panel';
+    btn.addEventListener('click', phase11OpenSlaPanel_);
+    topbarRight.appendChild(btn);
+  }
+  if(!document.querySelector('#phase11BtnDashViews')){
+    const btn = document.createElement('button');
+    btn.id = 'phase11BtnDashViews';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Dash Views';
+    btn.title = 'Open saved dashboard views panel';
+    btn.addEventListener('click', phase11OpenDashViewsPanel_);
+    topbarRight.appendChild(btn);
+  }
+}
+
+function phase11OpenSlaPanel_(){
+  openPanelInOwningTab_('#phase11SlaPanel', 'dashboard', 40);
+}
+function phase11OpenDashViewsPanel_(){
+  openPanelInOwningTab_('#phase11DashViewsPanel', 'dashboard', 40);
+}
+
+function phase11DefaultSlaCfg_(){
+  return {
+    enabled: true,
+    alertStaleTasks: true,
+    alertStaleBlockers: true,
+    alertStaleMilestones: true,
+    staleTaskDays: 5,
+    staleBlockerDays: 2,
+    staleMilestoneDays: 7,
+    notifMaxPerType: 8,
+  };
+}
+function phase11NormalizeSlaCfg_(v){
+  const d = phase11DefaultSlaCfg_();
+  const n = (x, fallback, min, max) => {
+    const m = Number(x);
+    if(!Number.isFinite(m)) return fallback;
+    return Math.max(min, Math.min(max, Math.round(m)));
+  };
+  return {
+    enabled: v?.enabled !== false,
+    alertStaleTasks: v?.alertStaleTasks !== false,
+    alertStaleBlockers: v?.alertStaleBlockers !== false,
+    alertStaleMilestones: v?.alertStaleMilestones !== false,
+    staleTaskDays: n(v?.staleTaskDays, d.staleTaskDays, 1, 365),
+    staleBlockerDays: n(v?.staleBlockerDays, d.staleBlockerDays, 1, 365),
+    staleMilestoneDays: n(v?.staleMilestoneDays, d.staleMilestoneDays, 1, 365),
+    notifMaxPerType: n(v?.notifMaxPerType, d.notifMaxPerType, 1, 20),
+  };
+}
+function phase11LoadSlaCfg_(){
+  if(phase11State_.slaCfg) return phase11State_.slaCfg;
+  let cfg = null;
+  try{ cfg = JSON.parse(localStorage.getItem(PHASE11_SLA_CFG_KEY) || 'null'); }catch{ cfg = null; }
+  phase11State_.slaCfg = phase11NormalizeSlaCfg_(cfg || {});
+  return phase11State_.slaCfg;
+}
+function phase11SaveSlaCfg_(){
+  try{ localStorage.setItem(PHASE11_SLA_CFG_KEY, JSON.stringify(phase11LoadSlaCfg_())); }catch{}
+}
+
+function phase11NormalizeDashView_(v){
+  return {
+    id: String(v?.id || uid()),
+    name: String(v?.name || 'Dashboard View').trim() || 'Dashboard View',
+    targetId: String(v?.targetId || ''),
+    scrollY: Number.isFinite(Number(v?.scrollY)) ? Math.max(0, Math.round(Number(v.scrollY))) : 0,
+    createdAt: Number(v?.createdAt || Date.now()),
+    updatedAt: Number(v?.updatedAt || Date.now()),
+  };
+}
+function phase11LoadDashViews_(){
+  if(Array.isArray(phase11State_.dashViews)) return phase11State_.dashViews;
+  let arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(PHASE11_DASH_VIEWS_KEY) || '[]') || []; }catch{ arr = []; }
+  phase11State_.dashViews = Array.isArray(arr) ? arr.filter(Boolean).map(phase11NormalizeDashView_) : [];
+  return phase11State_.dashViews;
+}
+function phase11SaveDashViews_(){
+  try{ localStorage.setItem(PHASE11_DASH_VIEWS_KEY, JSON.stringify((phase11LoadDashViews_() || []).map(phase11NormalizeDashView_))); }catch{}
+}
+
+function phase11DashboardTargets_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return [];
+  const nodes = Array.from(tab.querySelectorAll('[id]'));
+  const out = [];
+  for(const el of nodes){
+    const id = String(el.id || '');
+    if(!id) continue;
+    if(['tab-dashboard','phase8DashboardHost','phase10DashboardHost','phase11DashboardHost'].includes(id)) continue;
+    if(!/phase\d+/i.test(id)) continue;
+    let label = '';
+    const titleNode = el.querySelector?.('.phase8-item__title, .phase9-title, .phase10-title, .phase11-title, h3, h4');
+    if(titleNode) label = String(titleNode.textContent || '').trim();
+    if(!label) label = id.replace(/([a-z])([A-Z])/g, '$1 $2');
+    out.push({ id, label });
+  }
+  const seen = new Set();
+  return out.filter(x => !seen.has(x.id) && seen.add(x.id));
+}
+
+function phase11ApplyDashView_(viewOrId){
+  const views = phase11LoadDashViews_();
+  const v = (typeof viewOrId === 'string') ? (views.find(x => x.id === viewOrId) || null) : viewOrId;
+  if(!v) return;
+  switchTab('dashboard');
+  const targetId = String(v.targetId || '');
+  setTimeout(() => {
+    const el = targetId ? document.getElementById(targetId) : null;
+    if(el){
+      el.scrollIntoView({ behavior:'smooth', block:'start' });
+      try{ el.classList.add('is-selected'); setTimeout(()=>el.classList.remove('is-selected'), 900); }catch{}
+    } else {
+      try{ window.scrollTo({ top: Math.max(0, Number(v.scrollY || 0)), behavior:'smooth' }); }catch{}
+    }
+  }, 60);
+}
+
+function phase11TaskLastTouchTs_(t){
+  let ts = Number(t?.createdAt || 0);
+  if(Number.isFinite(Number(t?.updatedAt))) ts = Math.max(ts, Number(t.updatedAt));
+  if(Array.isArray(t?.comments)){
+    for(const c of t.comments){
+      const cts = Number(c?.ts || 0);
+      if(Number.isFinite(cts)) ts = Math.max(ts, cts);
+    }
+  }
+  return ts || Date.now();
+}
+
+function phase11CollectSlaAging_(opts){
+  opts = opts || {};
+  const cfg = phase11LoadSlaCfg_();
+  const onlyActiveProject = !!opts.onlyActiveProject;
+  const DAY = 86400000;
+  const now = Date.now();
+  const entries = (typeof phase8AllTaskEntries_ === 'function')
+    ? (phase8AllTaskEntries_({ onlyActiveProject }) || [])
+    : [];
+
+  const staleTasks = [];
+  const staleBlockers = [];
+  const milestoneMap = new Map();
+  const bucket = { lt2:0, d2_4:0, d5_9:0, d10p:0 };
+  let openCount = 0, doneCount = 0;
+
+  for(const e of entries){
+    const t = e?.t;
+    if(!t) continue;
+    if(t.done){ doneCount++; continue; }
+    openCount++;
+    const touchTs = phase11TaskLastTouchTs_(t);
+    const ageDays = Math.floor((now - touchTs) / DAY);
+    if(ageDays < 2) bucket.lt2++;
+    else if(ageDays < 5) bucket.d2_4++;
+    else if(ageDays < 10) bucket.d5_9++;
+    else bucket.d10p++;
+
+    const key = `${String(e.p?.id||'')}|${String(e.ms?.id||'')}`;
+    const agg = milestoneMap.get(key) || { p:e.p, mod:e.mod, ms:e.ms, open:0, oldestOpenAgeDays:0, newestTouchTs:0, blockerOpen:0 };
+    agg.open++;
+    agg.oldestOpenAgeDays = Math.max(agg.oldestOpenAgeDays, ageDays);
+    agg.newestTouchTs = Math.max(agg.newestTouchTs, touchTs);
+    if(t.severity === 'blocker') agg.blockerOpen++;
+    milestoneMap.set(key, agg);
+
+    const row = { e, t, touchTs, ageDays };
+    if(ageDays >= Number(cfg.staleTaskDays || 5)) staleTasks.push(row);
+    if(t.severity === 'blocker' && ageDays >= Number(cfg.staleBlockerDays || 2)) staleBlockers.push(row);
+  }
+
+  const staleMilestones = [];
+  for(const agg of milestoneMap.values()){
+    const ageDays = Math.floor((now - Number(agg.newestTouchTs || 0)) / DAY);
+    if(agg.open > 0 && ageDays >= Number(cfg.staleMilestoneDays || 7)){
+      staleMilestones.push({ ...agg, ageDays });
+    }
+  }
+
+  staleTasks.sort((a,b)=> (b.ageDays - a.ageDays) || String(a.t?.title||'').localeCompare(String(b.t?.title||'')));
+  staleBlockers.sort((a,b)=> (b.ageDays - a.ageDays) || String(a.t?.title||'').localeCompare(String(b.t?.title||'')));
+  staleMilestones.sort((a,b)=> (b.ageDays - a.ageDays) || String(a.ms?.title||'').localeCompare(String(b.ms?.title||'')));
+
+  return {
+    now,
+    cfg,
+    onlyActiveProject,
+    openCount,
+    doneCount,
+    bucket,
+    staleTasks,
+    staleBlockers,
+    staleMilestones,
+    taskTotal: entries.length,
+  };
+}
+
+function phase11FocusMilestone_(x){
+  if(!x || !x.p || !x.ms) return;
+  try{ setActiveProject(x.p.id); }catch{}
+  try{ setActiveMilestone(x.ms.id); }catch{}
+  switchTab('checklist');
+  setTimeout(() => document.querySelector('#taskList')?.scrollIntoView({ behavior:'smooth', block:'start' }), 80);
+}
+
+function phase11AppendSlaNotifications_(arr){
+  const out = Array.isArray(arr) ? arr.slice() : [];
+  const cfg = phase11LoadSlaCfg_();
+  if(!cfg.enabled) return out;
+  const sla = phase11CollectSlaAging_({ onlyActiveProject:false });
+  const maxPerType = Math.max(1, Number(cfg.notifMaxPerType || 8));
+
+  if(cfg.alertStaleBlockers){
+    for(const r of sla.staleBlockers.slice(0, maxPerType)){
+      const e = r.e;
+      out.push({
+        id:`ph11:staleblk:${e.p.id}:${e.ms.id}:${r.t.id}`,
+        type:'staleBlocker',
+        level: r.ageDays >= (cfg.staleBlockerDays + 3) ? 'urgent' : 'high',
+        title:`Stale blocker: ${String(r.t.title || 'Untitled Task')}`,
+        meta:`No update ~${r.ageDays}d • ${e.p.name} • ${e.ms.title}`,
+        action:()=>{ if(typeof phase8FocusTask_ === 'function') phase8FocusTask_(e); else phase11FocusMilestone_(e); }
+      });
+    }
+  }
+  if(cfg.alertStaleTasks){
+    for(const r of sla.staleTasks.slice(0, maxPerType)){
+      const e = r.e;
+      out.push({
+        id:`ph11:staletask:${e.p.id}:${e.ms.id}:${r.t.id}`,
+        type:'staleTask',
+        level: r.ageDays >= (cfg.staleTaskDays + 5) ? 'high' : 'normal',
+        title:`Stale task: ${String(r.t.title || 'Untitled Task')}`,
+        meta:`No update ~${r.ageDays}d • ${e.p.name} • ${e.ms.title}`,
+        action:()=>{ if(typeof phase8FocusTask_ === 'function') phase8FocusTask_(e); else phase11FocusMilestone_(e); }
+      });
+    }
+  }
+  if(cfg.alertStaleMilestones){
+    for(const m of sla.staleMilestones.slice(0, maxPerType)){
+      out.push({
+        id:`ph11:stalems:${m.p.id}:${m.ms.id}`,
+        type:'staleMilestone',
+        level: m.ageDays >= (cfg.staleMilestoneDays + 7) ? 'high' : 'normal',
+        title:`Stale milestone: ${String(m.ms?.title || 'Untitled Milestone')}`,
+        meta:`No updates ~${m.ageDays}d • open ${m.open||0} • ${String(m.p?.name||'')}`,
+        action:()=>phase11FocusMilestone_(m)
+      });
+    }
+  }
+
+  const seen = new Set();
+  const rank = { urgent:3, high:2, normal:1 };
+  return out.filter(n => !seen.has(n.id) && seen.add(n.id)).sort((a,b)=> (rank[b.level]-rank[a.level]) || String(a.title).localeCompare(String(b.title))).slice(0, 120);
+}
+
+function phase11PostRenderDashboard_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  let host = document.querySelector('#phase11DashboardHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'phase11DashboardHost';
+    host.className = 'phase11-box';
+    host.innerHTML = `
+      <div class="phase11-title">Phase 11 Team Ops + SLA Aging</div>
+      <div class="phase11-grid" id="phase11DashGrid">
+        <div class="phase11-card" id="phase11SlaPanel"></div>
+        <div class="phase11-card" id="phase11DashViewsPanel"></div>
+      </div>
+    `;
+    tab.appendChild(host);
+  }
+  phase11RenderSlaPanel_();
+  phase11RenderDashViewsPanel_();
+}
+
+function phase11RenderSlaPanel_(){
+  const box = document.querySelector('#phase11SlaPanel');
+  if(!box) return;
+  const cfg = phase11LoadSlaCfg_();
+  const sla = phase11CollectSlaAging_({ onlyActiveProject: !!phase11State_.scopeActiveOnly });
+  const activeLabel = phase11State_.scopeActiveOnly ? (getActiveProject()?.name || 'Active project') : 'All projects';
+
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">SLA Aging & Stale Update Alerts</div><div class="phase8-item__meta">Rules + stale monitoring (${escapeHtml(activeLabel)})</div></div>
+    <div class="phase11-note" style="margin-top:6px">Stale means no recent task/thread activity for the configured number of days. Alerts feed into the Phase 8 Notifications Center.</div>
+    <div class="phase11-toolbar" style="margin-top:8px">
+      <label class="phase11-check"><span>Enabled</span><input type="checkbox" id="phase11SlaEnabled" ${cfg.enabled ? 'checked' : ''}></label>
+      <label class="phase11-check"><span>Scope: Active Project</span><input type="checkbox" id="phase11SlaScope" ${phase11State_.scopeActiveOnly ? 'checked' : ''}></label>
+      <button class="btn btn--ghost" type="button" id="phase11BtnSlaSave">Save Rules</button>
+      <button class="btn btn--ghost" type="button" id="phase11BtnSlaRefresh">Refresh</button>
+      <button class="btn btn--ghost" type="button" id="phase11BtnSlaOpenNotif">Notifications</button>
+    </div>
+    <div class="phase11-two">
+      <div class="phase11-mini">
+        <h4>Thresholds</h4>
+        <div class="phase11-list">
+          <label class="phase11-check"><span>Stale Task Days</span><input class="input phase11-inlineNum" id="phase11StaleTaskDays" type="number" min="1" max="365" value="${Number(cfg.staleTaskDays||5)}"></label>
+          <label class="phase11-check"><span>Stale Blocker Days</span><input class="input phase11-inlineNum" id="phase11StaleBlockerDays" type="number" min="1" max="365" value="${Number(cfg.staleBlockerDays||2)}"></label>
+          <label class="phase11-check"><span>Stale Milestone Days</span><input class="input phase11-inlineNum" id="phase11StaleMilestoneDays" type="number" min="1" max="365" value="${Number(cfg.staleMilestoneDays||7)}"></label>
+          <label class="phase11-check"><span>Notif Max / Type</span><input class="input phase11-inlineNum" id="phase11NotifMaxPerType" type="number" min="1" max="20" value="${Number(cfg.notifMaxPerType||8)}"></label>
+        </div>
+      </div>
+      <div class="phase11-mini">
+        <h4>Notification Types</h4>
+        <div class="phase11-list">
+          <label class="phase11-check"><span>Stale Tasks</span><input type="checkbox" id="phase11AlertStaleTasks" ${cfg.alertStaleTasks ? 'checked' : ''}></label>
+          <label class="phase11-check"><span>Stale Blockers</span><input type="checkbox" id="phase11AlertStaleBlockers" ${cfg.alertStaleBlockers ? 'checked' : ''}></label>
+          <label class="phase11-check"><span>Stale Milestones</span><input type="checkbox" id="phase11AlertStaleMilestones" ${cfg.alertStaleMilestones ? 'checked' : ''}></label>
+        </div>
+      </div>
+    </div>
+    <div class="phase11-kv">
+      <div><b>Open Tasks</b><span>${sla.openCount}</span></div>
+      <div><b>Stale Tasks</b><span>${sla.staleTasks.length}</span></div>
+      <div><b>Stale Blockers</b><span>${sla.staleBlockers.length}</span></div>
+      <div><b>Stale Milestones</b><span>${sla.staleMilestones.length}</span></div>
+    </div>
+    <div class="phase11-two">
+      <div class="phase11-mini" id="phase11SlaTopTasks"></div>
+      <div class="phase11-mini" id="phase11SlaTopMilestones"></div>
+    </div>
+  `;
+
+  const tasksBox = box.querySelector('#phase11SlaTopTasks');
+  const msBox = box.querySelector('#phase11SlaTopMilestones');
+  if(tasksBox){
+    tasksBox.innerHTML = `<h4>Top stale tasks / blockers</h4><div class="phase11-list" id="phase11SlaTasksList"></div>`;
+    const list = tasksBox.querySelector('#phase11SlaTasksList');
+    const rows = [];
+    const blockerIds = new Set((sla.staleBlockers || []).map(r => String(r.t?.id || '')));
+    for(const r of (sla.staleBlockers || []).slice(0,5)) rows.push({ ...r, kind:'blocker' });
+    for(const r of (sla.staleTasks || []).slice(0,8)) if(!blockerIds.has(String(r.t?.id || ''))) rows.push({ ...r, kind:'task' });
+    if(!rows.length){ list.innerHTML = `<div class="phase8-empty">No stale task alerts with current thresholds.</div>`; }
+    else rows.slice(0,8).forEach(r => {
+      const e = r.e;
+      const row = document.createElement('div');
+      row.className = 'phase11-row';
+      row.innerHTML = `
+        <div>
+          <div class="phase11-row__name">${escapeHtml(String(r.t?.title || 'Untitled Task'))}</div>
+          <div class="phase11-row__meta">${escapeHtml(String(e?.p?.name || ''))} • ${escapeHtml(String(e?.ms?.title || ''))}${e?.t?.assignee ? ` • ${escapeHtml(String(e.t.assignee))}` : ''}</div>
+        </div>
+        <div class="phase11-tags">
+          <span class="phase11-tag ${r.kind==='blocker'?'risk':'warn'}">${r.kind==='blocker' ? 'blocker' : 'task'}</span>
+          <span class="phase11-tag warn">${r.ageDays}d stale</span>
+          <button class="btn btn--ghost" type="button" data-open>Open</button>
+        </div>
+      `;
+      row.querySelector('[data-open]')?.addEventListener('click', () => { if(typeof phase8FocusTask_ === 'function') phase8FocusTask_(e); else phase11FocusMilestone_(e); });
+      list.appendChild(row);
+    });
+  }
+  if(msBox){
+    msBox.innerHTML = `<h4>Top stale milestones + aging buckets</h4><div class="phase11-list" id="phase11SlaMsList"></div>`;
+    const list = msBox.querySelector('#phase11SlaMsList');
+    const bucketRow = document.createElement('div');
+    bucketRow.className = 'phase11-row';
+    bucketRow.innerHTML = `
+      <div>
+        <div class="phase11-row__name">Open-task aging buckets</div>
+        <div class="phase11-row__meta">Based on last task/thread activity time</div>
+      </div>
+      <div class="phase11-tags">
+        <span class="phase11-tag ok">&lt;2d ${sla.bucket.lt2||0}</span>
+        <span class="phase11-tag">2-4d ${sla.bucket.d2_4||0}</span>
+        <span class="phase11-tag warn">5-9d ${sla.bucket.d5_9||0}</span>
+        <span class="phase11-tag risk">10d+ ${sla.bucket.d10p||0}</span>
+      </div>
+    `;
+    list.appendChild(bucketRow);
+    if(!(sla.staleMilestones || []).length){
+      const empty = document.createElement('div');
+      empty.className = 'phase8-empty';
+      empty.textContent = 'No stale milestones with current threshold.';
+      list.appendChild(empty);
+    } else {
+      for(const m of sla.staleMilestones.slice(0,6)){
+        const row = document.createElement('div');
+        row.className = 'phase11-row';
+        row.innerHTML = `
+          <div>
+            <div class="phase11-row__name">${escapeHtml(String(m.ms?.title || 'Untitled Milestone'))}</div>
+            <div class="phase11-row__meta">${escapeHtml(String(m.p?.name || ''))} • open ${m.open||0}${m.blockerOpen ? ` • blockers ${m.blockerOpen}` : ''}</div>
+          </div>
+          <div class="phase11-tags">
+            <span class="phase11-tag warn">${m.ageDays}d stale</span>
+            <button class="btn btn--ghost" type="button" data-open>Open</button>
+          </div>
+        `;
+        row.querySelector('[data-open]')?.addEventListener('click', () => phase11FocusMilestone_(m));
+        list.appendChild(row);
+      }
+    }
+  }
+
+  box.querySelector('#phase11BtnSlaOpenNotif')?.addEventListener('click', () => {
+    switchTab('dashboard');
+    setTimeout(() => document.querySelector('#phase8NotificationsPanel')?.scrollIntoView({ behavior:'smooth', block:'start' }), 40);
+  });
+  box.querySelector('#phase11BtnSlaRefresh')?.addEventListener('click', () => {
+    try{ if(typeof phase8RenderNotificationsPanel_ === 'function') phase8RenderNotificationsPanel_(); }catch{}
+    phase11RenderSlaPanel_();
+  });
+  box.querySelector('#phase11SlaScope')?.addEventListener('change', (e) => { phase11State_.scopeActiveOnly = !!e.target.checked; phase11RenderSlaPanel_(); });
+  box.querySelector('#phase11BtnSlaSave')?.addEventListener('click', () => {
+    const next = phase11NormalizeSlaCfg_({
+      enabled: !!box.querySelector('#phase11SlaEnabled')?.checked,
+      alertStaleTasks: !!box.querySelector('#phase11AlertStaleTasks')?.checked,
+      alertStaleBlockers: !!box.querySelector('#phase11AlertStaleBlockers')?.checked,
+      alertStaleMilestones: !!box.querySelector('#phase11AlertStaleMilestones')?.checked,
+      staleTaskDays: Number(box.querySelector('#phase11StaleTaskDays')?.value || cfg.staleTaskDays),
+      staleBlockerDays: Number(box.querySelector('#phase11StaleBlockerDays')?.value || cfg.staleBlockerDays),
+      staleMilestoneDays: Number(box.querySelector('#phase11StaleMilestoneDays')?.value || cfg.staleMilestoneDays),
+      notifMaxPerType: Number(box.querySelector('#phase11NotifMaxPerType')?.value || cfg.notifMaxPerType),
+    });
+    phase11State_.slaCfg = next;
+    phase11SaveSlaCfg_();
+    addActivity(`Phase11 SLA rules updated (task ${next.staleTaskDays}d, blocker ${next.staleBlockerDays}d, milestone ${next.staleMilestoneDays}d)`);
+    try{ if(typeof phase8RenderNotificationsPanel_ === 'function') phase8RenderNotificationsPanel_(); }catch{}
+    phase11RenderSlaPanel_();
+  });
+}
+
+function phase11RenderDashViewsPanel_(){
+  const box = document.querySelector('#phase11DashViewsPanel');
+  if(!box) return;
+  const views = phase11LoadDashViews_().slice().sort((a,b)=> Number(b.updatedAt||0)-Number(a.updatedAt||0));
+  const targets = phase11DashboardTargets_();
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Saved Dashboard Views</div><div class="phase8-item__meta">Jump presets for dashboard sections</div></div>
+    <div class="phase11-note" style="margin-top:6px">Save named dashboard jump points (panel target + current scroll position). Useful for daily PM routines (SLA, Notifications, Health, Recovery, etc.).</div>
+    <div class="phase11-toolbar" style="margin-top:8px">
+      <input class="input" id="phase11DashViewName" type="text" placeholder="View name (e.g. Morning Ops)" />
+      <select class="select" id="phase11DashViewTarget">
+        <option value="">— Current scroll position only —</option>
+        ${targets.map(t => `<option value="${escapeHtml(String(t.id))}">${escapeHtml(String(t.label))}</option>`).join('')}
+      </select>
+      <button class="btn btn--ghost" type="button" id="phase11BtnSaveDashView">Save Current View</button>
+    </div>
+    <div class="phase11-toolbar" style="margin-top:8px">
+      <select class="select" id="phase11SavedDashViewsSelect">
+        <option value="">— Select saved dashboard view —</option>
+        ${views.map(v => `<option value="${escapeHtml(String(v.id))}">${escapeHtml(String(v.name))}${v.targetId ? ` • ${escapeHtml(String(v.targetId))}` : ''}</option>`).join('')}
+      </select>
+      <button class="btn btn--ghost" type="button" id="phase11BtnOpenDashView">Open Selected</button>
+      <button class="btn btn--ghost" type="button" id="phase11BtnDeleteDashView">Delete Selected</button>
+    </div>
+    <div class="phase11-list" id="phase11DashViewsList"></div>
+  `;
+
+  const list = box.querySelector('#phase11DashViewsList');
+  if(!views.length){
+    list.innerHTML = `<div class="phase8-empty">No saved dashboard views yet. Save one for your daily PM workflow.</div>`;
+  } else {
+    for(const v of views.slice(0,12)){
+      const row = document.createElement('div');
+      row.className = 'phase11-row';
+      const targetLabel = (targets.find(t => t.id === v.targetId)?.label) || (v.targetId ? v.targetId : 'Current scroll');
+      row.innerHTML = `
+        <div>
+          <div class="phase11-row__name">${escapeHtml(String(v.name))}</div>
+          <div class="phase11-row__meta">${escapeHtml(String(targetLabel))} • ${new Date(Number(v.updatedAt||v.createdAt||Date.now())).toLocaleString()}</div>
+        </div>
+        <div class="phase11-tags">
+          ${v.targetId ? `<span class="phase11-tag">${escapeHtml(String(v.targetId))}</span>` : `<span class="phase11-tag ok">scroll</span>`}
+          <button class="btn btn--ghost" type="button" data-open>Open</button>
+          <button class="btn btn--ghost" type="button" data-del>Delete</button>
+        </div>
+      `;
+      row.querySelector('[data-open]')?.addEventListener('click', ()=> phase11ApplyDashView_(v));
+      row.querySelector('[data-del]')?.addEventListener('click', async ()=> {
+        const okDelete = await pmConfirmDialog_(`Delete dashboard view "${v.name}"?`, { title:'Delete Dashboard View', okText:'Delete', danger:true });
+        if(!okDelete) return;
+        phase11State_.dashViews = phase11LoadDashViews_().filter(x => x.id !== v.id);
+        phase11SaveDashViews_();
+        addActivity(`Phase11 deleted dashboard view: ${v.name}`);
+        phase11RenderDashViewsPanel_();
+      });
+      list.appendChild(row);
+    }
+  }
+
+  box.querySelector('#phase11BtnSaveDashView')?.addEventListener('click', () => {
+    const nameRaw = String(box.querySelector('#phase11DashViewName')?.value || '').trim();
+    const targetId = String(box.querySelector('#phase11DashViewTarget')?.value || '');
+    const name = nameRaw || (targetId ? `Dashboard • ${targetId}` : `Dashboard • ${new Date().toLocaleTimeString()}`);
+    const viewsArr = phase11LoadDashViews_();
+    const item = phase11NormalizeDashView_({ id: uid(), name, targetId, scrollY: Math.round(window.scrollY || 0), createdAt: Date.now(), updatedAt: Date.now() });
+    viewsArr.unshift(item);
+    phase11State_.dashViews = viewsArr.slice(0, 30);
+    phase11SaveDashViews_();
+    addActivity(`Phase11 saved dashboard view: ${item.name}`);
+    phase11RenderDashViewsPanel_();
+  });
+
+  box.querySelector('#phase11BtnOpenDashView')?.addEventListener('click', () => {
+    const id = String(box.querySelector('#phase11SavedDashViewsSelect')?.value || '');
+    if(!id){ alert('Select a saved dashboard view first.'); return; }
+    phase11ApplyDashView_(id);
+  });
+  box.querySelector('#phase11BtnDeleteDashView')?.addEventListener('click', async () => {
+    const id = String(box.querySelector('#phase11SavedDashViewsSelect')?.value || '');
+    if(!id){ alert('Select a saved dashboard view first.'); return; }
+    const v = phase11LoadDashViews_().find(x => x.id === id);
+    if(!v) return;
+    const okDelete = await pmConfirmDialog_(`Delete dashboard view "${v.name}"?`, { title:'Delete Dashboard View', okText:'Delete', danger:true });
+    if(!okDelete) return;
+    phase11State_.dashViews = phase11LoadDashViews_().filter(x => x.id !== id);
+    phase11SaveDashViews_();
+    addActivity(`Phase11 deleted dashboard view: ${v.name}`);
+    phase11RenderDashViewsPanel_();
+  });
+}
+
+try{ initPhase11_(); }catch(err){ console.warn('Phase11 init failed', err); }
+
+
+/* ---------------------------
+   Phase 12 Team Execution Automation (Additive Patch)
+   - SLA breach actions (nudge / assign / escalate) from stale alerts
+   - Stale status audit transitions (breach/recovery) into activity trail
+   - Saved dashboard views export/import (portable JSON)
+   - Assignee check-in generator from stale/blocker workload
+   - Risk digest export (TXT / MD)
+---------------------------- */
+var PHASE12_CFG_KEY = 'stark_pm_phase12_cfg_v1';
+var PHASE12_STALE_AUDIT_KEY = 'stark_pm_phase12_stale_audit_v1';
+var phase12State_ = {
+  inited:false,
+  cfg:null,
+  staleAudit:null,
+  lastAuditScanTs:0,
+};
+
+function initPhase12_(){
+  if(phase12State_.inited) return;
+  phase12State_.inited = true;
+  try{ phase12InjectStyles_(); }catch(err){ console.warn('Phase12 styles failed', err); }
+  try{ phase12LoadCfg_(); phase12LoadStaleAuditState_(); }catch{}
+  try{ phase12WrapCore_(); }catch(err){ console.warn('Phase12 wrap failed', err); }
+  try{ phase12EnsureTopbarButtons_(); }catch(err){ console.warn('Phase12 topbar failed', err); }
+}
+
+function phase12InjectStyles_(){
+  if(document.querySelector('#phase12Styles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase12Styles';
+  st.textContent = `
+    .phase12-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase12-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase12-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:10px}
+    .phase12-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase12-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .phase12-note{font-size:11px;opacity:.8;line-height:1.35}
+    .phase12-list{display:grid;gap:8px;margin-top:8px}
+    .phase12-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase12-row__name{font-size:12px;font-weight:700;line-height:1.25}
+    .phase12-row__meta{font-size:11px;opacity:.78;line-height:1.3;margin-top:2px}
+    .phase12-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;align-items:center}
+    .phase12-tag{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:2px 7px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+    .phase12-tag.warn{border-color:rgba(255,191,92,.25)}
+    .phase12-tag.risk{border-color:rgba(255,107,107,.28)}
+    .phase12-kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+    .phase12-kv > div{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase12-kv b{display:block;font-size:10px;opacity:.72;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+    .phase12-kv span{font-size:14px;font-weight:800}
+    .phase12-pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.35;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.14);margin-top:8px}
+    .phase12-inlineNum{width:90px}
+    .phase12-check{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.01)}
+    .phase12-notifExtra{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    @media (max-width: 980px){ .phase12-grid{grid-template-columns:1fr} .phase12-kv{grid-template-columns:1fr 1fr} }
+    @media (max-width: 640px){ .phase12-kv{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase12DefaultCfg_(){
+  return {
+    staleAuditEnabled: true,
+    staleAuditCooldownMin: 10,
+    dashViewImportMode: 'merge',
+    checkinDueHour: 9,
+    checkinIncludeStale: true,
+    checkinIncludeBlocked: true,
+    riskDigestAllProjects: true,
+  };
+}
+function phase12LoadCfg_(){
+  if(phase12State_.cfg) return phase12State_.cfg;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE12_CFG_KEY) || 'null'); }catch{}
+  const d = phase12DefaultCfg_();
+  const x = (raw && typeof raw === 'object') ? raw : {};
+  phase12State_.cfg = {
+    staleAuditEnabled: x.staleAuditEnabled !== false,
+    staleAuditCooldownMin: Math.max(1, Math.min(240, Number(x.staleAuditCooldownMin || d.staleAuditCooldownMin))),
+    dashViewImportMode: (x.dashViewImportMode === 'replace') ? 'replace' : 'merge',
+    checkinDueHour: Math.max(0, Math.min(23, Number(x.checkinDueHour ?? d.checkinDueHour))),
+    checkinIncludeStale: x.checkinIncludeStale !== false,
+    checkinIncludeBlocked: x.checkinIncludeBlocked !== false,
+    riskDigestAllProjects: x.riskDigestAllProjects !== false,
+  };
+  return phase12State_.cfg;
+}
+function phase12SaveCfg_(){ try{ localStorage.setItem(PHASE12_CFG_KEY, JSON.stringify(phase12LoadCfg_())); }catch{} }
+
+function phase12LoadStaleAuditState_(){
+  if(phase12State_.staleAudit) return phase12State_.staleAudit;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE12_STALE_AUDIT_KEY) || 'null'); }catch{}
+  const base = (raw && typeof raw === 'object') ? raw : {};
+  phase12State_.staleAudit = {
+    active: (base.active && typeof base.active === 'object') ? base.active : {},
+    lastScanTs: Number(base.lastScanTs || 0),
+    lastTransitionsTs: Number(base.lastTransitionsTs || 0),
+  };
+  return phase12State_.staleAudit;
+}
+function phase12SaveStaleAuditState_(){ try{ localStorage.setItem(PHASE12_STALE_AUDIT_KEY, JSON.stringify(phase12LoadStaleAuditState_())); }catch{} }
+
+function phase12WrapCore_(){
+  if(typeof renderDashboard === 'function' && !renderDashboard._phase12Wrapped){
+    const _orig = renderDashboard;
+    renderDashboard = function(){
+      const ret = _orig.apply(this, arguments);
+      try{ phase12RunStaleAuditScan_(); }catch(err){ console.warn('Phase12 stale audit scan failed', err); }
+      try{ phase12PostRenderDashboard_(); }catch(err){ console.warn('Phase12 dashboard render failed', err); }
+      return ret;
+    };
+    renderDashboard._phase12Wrapped = true;
+  }
+  if(typeof phase8RenderNotificationsPanel_ === 'function' && !phase8RenderNotificationsPanel_._phase12Wrapped){
+    const _orig = phase8RenderNotificationsPanel_;
+    phase8RenderNotificationsPanel_ = function(){
+      const ret = _orig.apply(this, arguments);
+      try{ phase12EnhanceNotificationsPanel_(); }catch(err){ console.warn('Phase12 notif enhance failed', err); }
+      return ret;
+    };
+    phase8RenderNotificationsPanel_._phase12Wrapped = true;
+  }
+  if(typeof phase11RenderDashViewsPanel_ === 'function' && !phase11RenderDashViewsPanel_._phase12Wrapped){
+    const _orig = phase11RenderDashViewsPanel_;
+    phase11RenderDashViewsPanel_ = function(){
+      const ret = _orig.apply(this, arguments);
+      try{ phase12EnhanceDashViewsPanel_(); }catch(err){ console.warn('Phase12 dash views io enhance failed', err); }
+      return ret;
+    };
+    phase11RenderDashViewsPanel_._phase12Wrapped = true;
+  }
+  if(typeof phase3BuildCmdkItems_ === 'function' && !phase3BuildCmdkItems_._phase12Wrapped){
+    const _orig = phase3BuildCmdkItems_;
+    phase3BuildCmdkItems_ = function(){
+      const arr = _orig.apply(this, arguments) || [];
+      arr.push(
+        { kind:'command', title:'Phase 12: Risk Digest Export', sub:'Open dashboard risk digest panel', tag:'PH12', act:'phase12RiskDigest' },
+        { kind:'command', title:'Phase 12: Generate Assignee Check-ins', sub:'Create check-in tasks from stale/blocker workload', tag:'PH12', act:'phase12Checkins' },
+        { kind:'command', title:'Phase 12: Dashboard Views Import/Export', sub:'Open dashboard views portability tools', tag:'PH12', act:'phase12DashIo' },
+      );
+      return arr;
+    };
+    phase3BuildCmdkItems_._phase12Wrapped = true;
+  }
+  if(typeof phase3RunCmdkAction_ === 'function' && !phase3RunCmdkAction_._phase12Wrapped){
+    const _orig = phase3RunCmdkAction_;
+    phase3RunCmdkAction_ = function(it){
+      if(it && it.act === 'phase12RiskDigest'){ phase12OpenRiskDigestPanel_(); return; }
+      if(it && it.act === 'phase12Checkins'){ phase12OpenCheckinPanel_(); return; }
+      if(it && it.act === 'phase12DashIo'){ phase12OpenDashViewsIo_(); return; }
+      return _orig.apply(this, arguments);
+    };
+    phase3RunCmdkAction_._phase12Wrapped = true;
+  }
+}
+
+function phase12EnsureTopbarButtons_(){
+  const topbarRight = document.querySelector('#topbarRight') || document.querySelector('.topbar__right') || document.querySelector('.topbar-right');
+  if(!topbarRight) return;
+  if(!document.querySelector('#phase12BtnRiskDigest')){
+    const btn = document.createElement('button');
+    btn.id = 'phase12BtnRiskDigest';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Risk Digest';
+    btn.title = 'Open risk digest export panel';
+    btn.addEventListener('click', phase12OpenRiskDigestPanel_);
+    topbarRight.appendChild(btn);
+  }
+  if(!document.querySelector('#phase12BtnCheckins')){
+    const btn = document.createElement('button');
+    btn.id = 'phase12BtnCheckins';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Check-ins';
+    btn.title = 'Open assignee check-in generator';
+    btn.addEventListener('click', phase12OpenCheckinPanel_);
+    topbarRight.appendChild(btn);
+  }
+}
+
+function phase12OpenRiskDigestPanel_(){ openPanelInOwningTab_('#phase12RiskDigestPanel', 'dashboard', 40); }
+function phase12OpenCheckinPanel_(){ openPanelInOwningTab_('#phase12CheckinPanel', 'dashboard', 40); }
+function phase12OpenDashViewsIo_(){ openPanelInOwningTab_('#phase12DashViewsIoBox', 'dashboard', 40); }
+
+function phase12PostRenderDashboard_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  let host = document.querySelector('#phase12DashboardHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'phase12DashboardHost';
+    host.className = 'phase12-box';
+    host.innerHTML = `
+      <div class="phase12-title">Phase 12 Team Execution Automation</div>
+      <div class="phase12-grid" id="phase12DashGridA">
+        <div class="phase12-card" id="phase12RiskDigestPanel"></div>
+        <div class="phase12-card" id="phase12CheckinPanel"></div>
+      </div>
+      <div class="phase12-grid" id="phase12DashGridB" style="margin-top:10px">
+        <div class="phase12-card" id="phase12StaleAuditPanel"></div>
+        <div class="phase12-card" id="phase12DashViewsIoPanel"></div>
+      </div>
+    `;
+    tab.appendChild(host);
+  }
+  phase12RenderRiskDigestPanel_();
+  phase12RenderCheckinPanel_();
+  phase12RenderStaleAuditPanel_();
+  phase12RenderDashViewsIoPanel_();
+}
+
+function phase12AllTaskEntries_(){
+  const rows = [];
+  for(const p of (state.projects || [])){
+    for(const mod of (p?.modules || [])){
+      for(const ms of (mod?.milestones || [])){
+        for(const t of (ms?.tasks || [])) rows.push({ p, mod, ms, t });
+      }
+    }
+  }
+  return rows;
+}
+
+function phase12ResolveSlaTargetFromNotif_(notif){
+  const id = String(notif?.id || '');
+  if(!id.startsWith('ph11:')) return null;
+  const parts = id.split(':');
+  const typ = parts[1] || '';
+  if(typ === 'stalems'){
+    const pId = parts[2], mId = parts[3];
+    const p = (state.projects || []).find(x => String(x?.id) === String(pId));
+    if(!p) return null;
+    for(const mod of (p.modules || [])){
+      const ms = (mod.milestones || []).find(x => String(x?.id) === String(mId));
+      if(ms) return { kind:'milestone', staleType:'milestone', p, mod, ms };
+    }
+    return null;
+  }
+  if(typ === 'staletask' || typ === 'staleblk'){
+    const pId = parts[2], mId = parts[3], tId = parts[4];
+    const p = (state.projects || []).find(x => String(x?.id) === String(pId));
+    if(!p) return null;
+    for(const mod of (p.modules || [])){
+      const ms = (mod.milestones || []).find(x => String(x?.id) === String(mId));
+      if(!ms) continue;
+      const t = (ms.tasks || []).find(x => String(x?.id) === String(tId));
+      if(t) return { kind:'task', staleType: (typ === 'staleblk' ? 'blocker' : 'task'), p, mod, ms, t };
+    }
+  }
+  return null;
+}
+
+function phase12EnsureTaskCommentsArray_(t){
+  if(!t || typeof t !== 'object') return [];
+  try{
+    if(typeof phase9EnsureTaskComments_ === 'function') return phase9EnsureTaskComments_(t);
+  }catch{}
+  if(!Array.isArray(t.comments)) t.comments = [];
+  return t.comments;
+}
+
+async function phase12ApplySlaAction_(notif, action){
+  const ref = phase12ResolveSlaTargetFromNotif_(notif);
+  if(!ref){ alert('Target item not found (it may have been changed/removed).'); return; }
+  const nowTxt = new Date().toLocaleString();
+  if(action === 'nudge'){
+    if(ref.kind === 'task'){
+      const msg = await pmPromptDialog_('Nudge note to append (task thread). Leave blank for default message.', `Stale ${ref.staleType} follow-up review requested.`, { title:'SLA Nudge (Task)', placeholder:'Optional nudge note' });
+      if(msg == null) return;
+      const comments = phase12EnsureTaskCommentsArray_(ref.t);
+      comments.push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: String(msg).trim() || `Stale ${ref.staleType} nudge sent (${nowTxt})` });
+      ref.t.comments = comments;
+      addActivity(`Phase12 nudge sent for stale ${ref.staleType}: ${ref.t.title}`);
+    } else {
+      const msg = await pmPromptDialog_('Milestone nudge note to append to milestone notes:', `Stale milestone follow-up requested (${nowTxt}).`, { title:'SLA Nudge (Milestone)', placeholder:'Optional nudge note' });
+      if(msg == null) return;
+      const line = String(msg).trim() || `Stale milestone nudge (${nowTxt})`;
+      ref.ms.notes = String(ref.ms.notes || '') + (String(ref.ms.notes || '').trim() ? `\n` : '') + `[Phase12] ${line}`;
+      addActivity(`Phase12 milestone nudge: ${ref.ms.title}`);
+    }
+    saveState(); renderAll();
+    return;
+  }
+  if(action === 'assign'){
+    if(ref.kind !== 'task'){ alert('Assign action is available for task alerts only.'); return; }
+    const seed = String(ref.t.assignee || '');
+    const who = await pmPromptDialog_(`Assign/reassign task:\n${ref.t.title}`, seed || '', { title:'SLA Assign Task', placeholder:'Assignee name' });
+    if(who == null) return;
+    ref.t.assignee = String(who).trim();
+    const comments = phase12EnsureTaskCommentsArray_(ref.t);
+    comments.push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: `SLA assign action: ${ref.t.assignee || 'Unassigned'} (${nowTxt})` });
+    addActivity(`Phase12 SLA assign: ${ref.t.title} -> ${ref.t.assignee || 'Unassigned'}`);
+    saveState(); renderAll();
+    return;
+  }
+  if(action === 'escalate'){
+    if(ref.kind === 'task'){
+      const nextSeverity = ref.staleType === 'blocker' ? 'blocker' : (ref.t.severity === 'normal' ? 'high' : ref.t.severity);
+      ref.t.severity = nextSeverity;
+      const comments = phase12EnsureTaskCommentsArray_(ref.t);
+      comments.push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: `SLA escalation action applied (${nowTxt})` });
+      addActivity(`Phase12 escalated stale ${ref.staleType}: ${ref.t.title} (${nextSeverity})`);
+    } else {
+      const t = (typeof mkTask === 'function') ? mkTask(`Escalation: stale milestone ${ref.ms.title}`, false) : { id:uid(), title:`Escalation: stale milestone ${ref.ms.title}`, done:false, severity:'high', assignee:'', createdAt:Date.now(), steps:[] };
+      t.severity = 'high';
+      t.assignee = '';
+      t.notes = `Generated by Phase12 SLA escalation for stale milestone. Project: ${ref.p.name}\nMilestone: ${ref.ms.title}`;
+      t.steps = [{ id: uid(), text:'Review stalled milestone blockers and next actions', done:false, children:[] }];
+      ref.ms.tasks = Array.isArray(ref.ms.tasks) ? ref.ms.tasks : [];
+      ref.ms.tasks.unshift(t);
+      addActivity(`Phase12 escalated stale milestone: ${ref.ms.title}`);
+    }
+    saveState(); renderAll();
+    return;
+  }
+}
+
+function phase12EnhanceNotificationsPanel_(){
+  const box = document.querySelector('#phase8NotificationsPanel');
+  if(!box) return;
+  const list = box.querySelector('#phase8NotifList');
+  if(!list) return;
+  if(typeof phase8GenerateNotifications_ !== 'function' || typeof phase8LoadNotifyState_ !== 'function') return;
+  const st = phase8LoadNotifyState_();
+  const visible = (phase8GenerateNotifications_() || []).filter(n => !((st.dismissed || []).includes(n.id))).slice(0,30);
+  const rows = Array.from(list.children || []).filter(el => el && el.classList && el.classList.contains('phase8-item'));
+  for(let i=0;i<rows.length && i<visible.length;i++){
+    const row = rows[i];
+    const n = visible[i];
+    if(!n || !String(n.id||'').startsWith('ph11:stale')) continue;
+    let extra = row.querySelector('.phase12-notifExtra');
+    if(!extra){
+      extra = document.createElement('div');
+      extra.className = 'phase12-notifExtra';
+      extra.innerHTML = `
+        <button class="btn btn--ghost" type="button" data-p12="nudge">Nudge</button>
+        <button class="btn btn--ghost" type="button" data-p12="assign">Assign</button>
+        <button class="btn btn--ghost" type="button" data-p12="escalate">Escalate</button>
+      `;
+      row.appendChild(extra);
+      extra.querySelector('[data-p12="nudge"]')?.addEventListener('click', ()=> phase12ApplySlaAction_(n, 'nudge'));
+      extra.querySelector('[data-p12="assign"]')?.addEventListener('click', ()=> phase12ApplySlaAction_(n, 'assign'));
+      extra.querySelector('[data-p12="escalate"]')?.addEventListener('click', ()=> phase12ApplySlaAction_(n, 'escalate'));
+    }
+    if(String(n.id||'').includes(':stalems:')){
+      const assignBtn = extra.querySelector('[data-p12="assign"]');
+      if(assignBtn){ assignBtn.disabled = true; assignBtn.title = 'Assign is task-only'; }
+    }
+  }
+}
+
+function phase12RunStaleAuditScan_(force){
+  const cfg = phase12LoadCfg_();
+  if(!cfg.staleAuditEnabled || typeof phase11CollectSlaAging_ !== 'function') return;
+  const st = phase12LoadStaleAuditState_();
+  const now = Date.now();
+  const minGap = Math.max(1, Number(cfg.staleAuditCooldownMin || 10)) * 60000;
+  if(!force && (now - Number(st.lastScanTs || 0) < Math.min(minGap, 20000))) return;
+  const sla = phase11CollectSlaAging_({ onlyActiveProject:false });
+  const nextActive = {};
+  const metaByKey = {};
+  const pushTask = (r, kind) => {
+    if(!r || !r.e || !r.t) return;
+    const key = `task|${kind}|${r.e.p.id}|${r.e.ms.id}|${r.t.id}`;
+    nextActive[key] = now;
+    metaByKey[key] = { kind, title:String(r.t.title||'Untitled Task'), p:String(r.e.p.name||''), ms:String(r.e.ms.title||'') };
+  };
+  const pushMs = (m) => {
+    if(!m || !m.p || !m.ms) return;
+    const key = `ms|${m.p.id}|${m.ms.id}`;
+    nextActive[key] = now;
+    metaByKey[key] = { kind:'milestone', title:String(m.ms.title||'Untitled Milestone'), p:String(m.p.name||''), ms:String(m.ms.title||'') };
+  };
+  (sla.staleBlockers || []).forEach(r => pushTask(r, 'blocker'));
+  (sla.staleTasks || []).forEach(r => pushTask(r, 'task'));
+  (sla.staleMilestones || []).forEach(pushMs);
+
+  const prevActive = (st.active && typeof st.active === 'object') ? st.active : {};
+  const entered = Object.keys(nextActive).filter(k => !prevActive[k]);
+  const recovered = Object.keys(prevActive).filter(k => !nextActive[k]);
+
+  if(now - Number(st.lastTransitionsTs || 0) >= minGap){
+    const maxLogs = 8;
+    let logged = 0;
+    for(const k of entered){
+      const m = metaByKey[k] || {};
+      const kindLabel = m.kind === 'milestone' ? 'stale milestone' : `stale ${m.kind || 'task'}`;
+      addActivity(`Phase12 SLA breach: ${kindLabel} • ${m.title || 'Untitled'} • ${m.p || ''}`.trim());
+      if(++logged >= maxLogs) break;
+    }
+    if(logged < maxLogs){
+      for(const k of recovered){
+        const parts = String(k).split('|');
+        let title = 'item';
+        let kindLabel = 'stale item';
+        if(parts[0] === 'ms'){
+          kindLabel = 'stale milestone';
+          const pId = parts[1], mId = parts[2];
+          const p = (state.projects || []).find(x => String(x.id) === pId);
+          if(p){
+            for(const mod of (p.modules||[])){ const ms = (mod.milestones||[]).find(x => String(x.id) === mId); if(ms){ title = ms.title; break; } }
+          }
+        } else if(parts[0] === 'task'){
+          kindLabel = `stale ${parts[1] || 'task'}`;
+          const pId = parts[2], mId = parts[3], tId = parts[4];
+          const p = (state.projects || []).find(x => String(x.id) === pId);
+          if(p){
+            for(const mod of (p.modules||[])){
+              const ms = (mod.milestones||[]).find(x => String(x.id) === mId); if(!ms) continue;
+              const t = (ms.tasks||[]).find(x => String(x.id) === tId); if(t){ title = t.title; break; }
+            }
+          }
+        }
+        addActivity(`Phase12 SLA recovery: ${kindLabel} • ${title}`);
+        if(++logged >= maxLogs) break;
+      }
+    }
+    if((entered.length || recovered.length) && typeof saveState === 'function') saveState({ skipHistory:true });
+    st.lastTransitionsTs = now;
+  }
+
+  st.active = nextActive;
+  st.lastScanTs = now;
+  phase12SaveStaleAuditState_();
+}
+
+function phase12RenderStaleAuditPanel_(){
+  const box = document.querySelector('#phase12StaleAuditPanel');
+  if(!box) return;
+  const cfg = phase12LoadCfg_();
+  const st = phase12LoadStaleAuditState_();
+  const activeKeys = Object.keys(st.active || {});
+  const sample = activeKeys.slice(0,6);
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Stale Audit Trail</div><div class="phase8-item__meta">Breach/recovery activity logging</div></div>
+    <div class="phase12-note" style="margin-top:6px">Phase 12 logs SLA breach and recovery transitions into the activity trail using the Phase 11 stale scan. Use a cooldown to avoid spam while you are editing.</div>
+    <div class="phase12-toolbar" style="margin-top:8px">
+      <label class="phase12-check"><span>Enabled</span><input type="checkbox" id="phase12AuditEnabled" ${cfg.staleAuditEnabled ? 'checked' : ''}></label>
+      <label class="phase12-check"><span>Cooldown (min)</span><input class="input phase12-inlineNum" type="number" min="1" max="240" id="phase12AuditCooldown" value="${Number(cfg.staleAuditCooldownMin||10)}"></label>
+      <button class="btn btn--ghost" type="button" id="phase12BtnAuditSave">Save</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnAuditScanNow">Scan Now</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnAuditOpenLog">Open Activity</button>
+    </div>
+    <div class="phase12-kv">
+      <div><b>Tracked active stale</b><span>${activeKeys.length}</span></div>
+      <div><b>Last scan</b><span>${st.lastScanTs ? new Date(Number(st.lastScanTs)).toLocaleTimeString() : '—'}</span></div>
+      <div><b>Last transitions log</b><span>${st.lastTransitionsTs ? new Date(Number(st.lastTransitionsTs)).toLocaleTimeString() : '—'}</span></div>
+      <div><b>Mode</b><span>${cfg.staleAuditEnabled ? 'ON' : 'OFF'}</span></div>
+    </div>
+    <div class="phase12-pre">${escapeHtml(sample.length ? sample.join('\n') : 'No active stale items tracked yet.')}</div>
+  `;
+  box.querySelector('#phase12BtnAuditSave')?.addEventListener('click', () => {
+    cfg.staleAuditEnabled = !!box.querySelector('#phase12AuditEnabled')?.checked;
+    cfg.staleAuditCooldownMin = Math.max(1, Math.min(240, Number(box.querySelector('#phase12AuditCooldown')?.value || cfg.staleAuditCooldownMin)));
+    phase12SaveCfg_();
+    addActivity(`Phase12 stale audit rules updated (${cfg.staleAuditEnabled ? 'on' : 'off'}, ${cfg.staleAuditCooldownMin}m cooldown)`);
+    saveState({ skipHistory:true });
+    phase12RenderStaleAuditPanel_();
+  });
+  box.querySelector('#phase12BtnAuditScanNow')?.addEventListener('click', () => {
+    phase12RunStaleAuditScan_(true);
+    phase12RenderStaleAuditPanel_();
+    if(typeof phase8RenderNotificationsPanel_ === 'function') try{ phase8RenderNotificationsPanel_(); }catch{}
+  });
+  box.querySelector('#phase12BtnAuditOpenLog')?.addEventListener('click', () => { switchTab('dashboard'); setTimeout(()=>document.querySelector('#dashActivityList, #phase8AuditPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 10); });
+}
+
+function phase12BuildRiskDigestData_(opts){
+  const allProjects = !!(opts && opts.allProjects);
+  const projects = allProjects ? (state.projects || []).slice() : (getActiveProject() ? [getActiveProject()] : []);
+  const healthRows = [];
+  for(const p of projects){
+    let h = null;
+    try{ h = (typeof phase8ScoreProjectHealth_ === 'function') ? phase8ScoreProjectHealth_(p) : null; }catch{}
+    if(!h) h = { score:0, badge:'Unknown', open:0, overdue:0, blocked:0, dueSoon:0, tasks:0 };
+    healthRows.push({ p, h });
+  }
+  healthRows.sort((a,b)=> Number(a.h.score||0)-Number(b.h.score||0));
+
+  let sla = null;
+  try{ if(typeof phase11CollectSlaAging_ === 'function') sla = phase11CollectSlaAging_({ onlyActiveProject: !allProjects }); }catch{}
+  if(!sla) sla = { staleTasks:[], staleBlockers:[], staleMilestones:[], taskTotal:0, bucket:{} };
+
+  let notifs = [];
+  try{ if(typeof phase8GenerateNotifications_ === 'function') notifs = phase8GenerateNotifications_() || []; }catch{}
+  const notifCounts = {};
+  for(const n of notifs){ notifCounts[n.type || 'other'] = (notifCounts[n.type || 'other'] || 0) + 1; }
+
+  const entries = phase12AllTaskEntries_().filter(e => allProjects ? true : (!projects.length ? false : e.p.id === projects[0].id));
+  const topRiskTasks = [];
+  for(const e of entries){
+    const t = e.t;
+    if(t.done) continue;
+    let score = 0;
+    if(t.severity === 'blocker') score += 10; else if(t.severity === 'high') score += 6; else score += 2;
+    const due = Number(t.dueAt || 0);
+    if(due){
+      const diffDays = Math.floor((due - Date.now())/86400000);
+      if(diffDays < 0) score += 8;
+      else if(diffDays <= 1) score += 5;
+      else if(diffDays <= 7) score += 2;
+    }
+    try{
+      if(typeof phase4GetUnresolvedBlockers_ === 'function' && phase4GetUnresolvedBlockers_(e.ms, t).length) score += 4;
+    }catch{}
+    if(score <= 0) continue;
+    topRiskTasks.push({ e, t, score });
+  }
+  topRiskTasks.sort((a,b)=> b.score-a.score || String(a.t.title).localeCompare(String(b.t.title)));
+
+  return {
+    generatedAt: Date.now(),
+    allProjects,
+    projects,
+    healthRows,
+    sla,
+    notifications: notifs,
+    notifCounts,
+    topRiskTasks: topRiskTasks.slice(0,12),
+  };
+}
+
+function phase12BuildRiskDigestText_(fmt, data){
+  const md = String(fmt||'TXT').toUpperCase() === 'MD';
+  const L = [];
+  const title = data.allProjects ? 'Risk Digest (All Projects)' : `Risk Digest (${data.projects[0]?.name || 'Active Project'})`;
+  if(md){
+    L.push(`# ${title}`);
+    L.push('');
+    L.push(`Generated: ${new Date(Number(data.generatedAt||Date.now())).toLocaleString()}`);
+    L.push('');
+    L.push('## Summary');
+  }else{
+    L.push(title);
+    L.push(`Generated: ${new Date(Number(data.generatedAt||Date.now())).toLocaleString()}`);
+    L.push('');
+    L.push('SUMMARY');
+  }
+  const sla = data.sla || {};
+  const notifCounts = data.notifCounts || {};
+  const sumRows = [
+    ['Projects', data.projects.length],
+    ['Stale blockers', (sla.staleBlockers||[]).length],
+    ['Stale tasks', (sla.staleTasks||[]).length],
+    ['Stale milestones', (sla.staleMilestones||[]).length],
+    ['Notifications', (data.notifications||[]).length],
+  ];
+  sumRows.forEach(([k,v]) => L.push(md ? `- **${k}:** ${v}` : `- ${k}: ${v}`));
+  L.push('');
+
+  if(md) L.push('## Project Health'); else L.push('PROJECT HEALTH');
+  if(!data.healthRows.length){
+    L.push(md ? '- No active project selected.' : '- No active project selected.');
+  } else {
+    data.healthRows.forEach(({p,h}) => {
+      const line = `${p.name} — score ${h.score} (${h.badge}) | open ${h.open}/${h.tasks} | overdue ${h.overdue} | blocked ${h.blocked} | due7 ${h.dueSoon}`;
+      L.push(md ? `- ${line}` : `- ${line}`);
+    });
+  }
+  L.push('');
+
+  if(md) L.push('## Notifications by Type'); else L.push('NOTIFICATIONS BY TYPE');
+  const notifEntries = Object.entries(notifCounts);
+  if(!notifEntries.length){ L.push('- none'); }
+  else notifEntries.sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))).forEach(([k,v]) => L.push(`- ${k}: ${v}`));
+  L.push('');
+
+  if(md) L.push('## Top Risk Tasks'); else L.push('TOP RISK TASKS');
+  if(!(data.topRiskTasks||[]).length){ L.push('- none'); }
+  else data.topRiskTasks.forEach((r,i) => {
+    const due = Number(r.t.dueAt || 0);
+    const dueTxt = due ? new Date(due).toLocaleDateString() : 'no due';
+    const line = `${i+1}. [${r.score}] ${r.t.title} (${r.e.p.name} • ${r.e.ms.title}) • ${r.t.severity||'normal'} • ${dueTxt}${r.t.assignee ? ` • ${r.t.assignee}` : ''}`;
+    L.push(line);
+  });
+  L.push('');
+
+  if(md) L.push('## SLA Aging Snapshot'); else L.push('SLA AGING SNAPSHOT');
+  const bucket = sla.bucket || {};
+  L.push(`- Buckets: <2d ${bucket.lt2||0}, 2-4d ${bucket.d2_4||0}, 5-9d ${bucket.d5_9||0}, 10d+ ${bucket.d10p||0}`);
+  const sb = (sla.staleBlockers||[]).slice(0,5);
+  const st = (sla.staleTasks||[]).slice(0,5);
+  if(sb.length){
+    L.push('- Stale blockers (top):');
+    sb.forEach(r => L.push(`  - ${r.t?.title || 'Untitled'} • ${r.ageDays}d • ${r.e?.p?.name || ''} / ${r.e?.ms?.title || ''}`));
+  }
+  if(st.length){
+    L.push('- Stale tasks (top):');
+    st.forEach(r => L.push(`  - ${r.t?.title || 'Untitled'} • ${r.ageDays}d • ${r.e?.p?.name || ''} / ${r.e?.ms?.title || ''}`));
+  }
+  return L.join('\n');
+}
+
+async function phase12PromptExportRiskDigest_(){
+  const cfg = phase12LoadCfg_();
+  const fmtRaw = await pmPromptDialog_('Export risk digest as TXT or MD?', 'MD', { title:'Risk Digest Export', placeholder:'TXT or MD' });
+  if(fmtRaw == null) return;
+  const fmt = String(fmtRaw).trim().toUpperCase() === 'TXT' ? 'TXT' : 'MD';
+  const scopeRaw = await pmPromptDialog_('Scope risk digest to ACTIVE project only? (yes/no)', cfg.riskDigestAllProjects ? 'no' : 'yes', { title:'Risk Digest Scope', placeholder:'yes or no' });
+  if(scopeRaw == null) return;
+  const activeOnly = /^y/i.test(String(scopeRaw).trim());
+  cfg.riskDigestAllProjects = !activeOnly; phase12SaveCfg_();
+  const data = phase12BuildRiskDigestData_({ allProjects: !activeOnly });
+  const text = phase12BuildRiskDigestText_(fmt, data);
+  const fn = `risk_digest_${!activeOnly ? 'all' : 'active'}_${new Date().toISOString().slice(0,10)}.${fmt === 'MD' ? 'md' : 'txt'}`;
+  downloadText(fn, text, fmt === 'MD' ? 'text/markdown' : 'text/plain');
+  addActivity(`Phase12 exported risk digest (${fmt}, ${!activeOnly ? 'all projects' : 'active project'})`);
+  saveState({ skipHistory:true });
+}
+
+function phase12RenderRiskDigestPanel_(){
+  const box = document.querySelector('#phase12RiskDigestPanel');
+  if(!box) return;
+  const cfg = phase12LoadCfg_();
+  const data = phase12BuildRiskDigestData_({ allProjects: !!cfg.riskDigestAllProjects });
+  const rows = data.healthRows || [];
+  const worst = rows[0] || null;
+  const topNotifs = Object.entries(data.notifCounts || {}).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const preview = phase12BuildRiskDigestText_('TXT', data).split('\n').slice(0,14).join('\n');
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Risk Digest Export</div><div class="phase8-item__meta">Daily/weekly PM risk summary (TXT/MD)</div></div>
+    <div class="phase12-toolbar" style="margin-top:8px">
+      <label class="phase12-check"><span>Scope: All Projects</span><input type="checkbox" id="phase12RiskAllProjects" ${cfg.riskDigestAllProjects ? 'checked' : ''}></label>
+      <button class="btn btn--ghost" type="button" id="phase12BtnRefreshDigest">Refresh</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnExportDigestMd">Export MD</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnExportDigestTxt">Export TXT</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnCopyDigestPreview">Copy Preview</button>
+    </div>
+    <div class="phase12-kv">
+      <div><b>Projects</b><span>${data.projects.length}</span></div>
+      <div><b>Worst Health</b><span>${worst ? `${worst.h.score} (${escapeHtml(String(worst.p?.name||''))})` : '—'}</span></div>
+      <div><b>Stale Blockers</b><span>${(data.sla?.staleBlockers||[]).length}</span></div>
+      <div><b>Notifications</b><span>${(data.notifications||[]).length}</span></div>
+    </div>
+    <div class="phase12-list">
+      <div class="phase12-row"><div><div class="phase12-row__name">Top notification types</div><div class="phase12-row__meta">Counts from Notifications Center pipeline</div></div><div class="phase12-tags">${topNotifs.length ? topNotifs.map(([k,v])=>`<span class=\"phase12-tag\">${escapeHtml(String(k))} ${v}</span>`).join('') : '<span class="phase12-tag">none</span>'}</div></div>
+    </div>
+    <div class="phase12-pre" id="phase12RiskDigestPreview">${escapeHtml(preview)}</div>
+  `;
+  box.querySelector('#phase12RiskAllProjects')?.addEventListener('change', (e) => { cfg.riskDigestAllProjects = !!e.target.checked; phase12SaveCfg_(); phase12RenderRiskDigestPanel_(); });
+  box.querySelector('#phase12BtnRefreshDigest')?.addEventListener('click', () => phase12RenderRiskDigestPanel_());
+  box.querySelector('#phase12BtnExportDigestMd')?.addEventListener('click', () => { const d = phase12BuildRiskDigestData_({ allProjects: !!cfg.riskDigestAllProjects }); const txt = phase12BuildRiskDigestText_('MD', d); downloadText(`risk_digest_${cfg.riskDigestAllProjects?'all':'active'}_${new Date().toISOString().slice(0,10)}.md`, txt, 'text/markdown'); addActivity('Phase12 exported risk digest (MD)'); saveState({skipHistory:true}); });
+  box.querySelector('#phase12BtnExportDigestTxt')?.addEventListener('click', () => { const d = phase12BuildRiskDigestData_({ allProjects: !!cfg.riskDigestAllProjects }); const txt = phase12BuildRiskDigestText_('TXT', d); downloadText(`risk_digest_${cfg.riskDigestAllProjects?'all':'active'}_${new Date().toISOString().slice(0,10)}.txt`, txt, 'text/plain'); addActivity('Phase12 exported risk digest (TXT)'); saveState({skipHistory:true}); });
+  box.querySelector('#phase12BtnCopyDigestPreview')?.addEventListener('click', async () => {
+    const pre = box.querySelector('#phase12RiskDigestPreview')?.textContent || '';
+    try{ await navigator.clipboard.writeText(pre); addActivity('Phase12 copied risk digest preview'); saveState({skipHistory:true}); }catch{ alert('Clipboard copy failed.'); }
+  });
+}
+
+function phase12TomorrowDueTs_(hour){
+  const d = new Date();
+  d.setDate(d.getDate()+1);
+  d.setHours(Number(hour)||9, 0, 0, 0);
+  return d.getTime();
+}
+
+function phase12BuildCheckinCandidatesForActiveMilestone_(){
+  const p = getActiveProject();
+  const m = p ? getActiveMilestone(p) : null;
+  if(!p || !m) return { p, m, groups:[] };
+  const cfg = phase12LoadCfg_();
+  const byId = Object.create(null);
+  const addItem = (t, kind, detail) => {
+    if(!t || t.done) return;
+    const assignee = String(t.assignee || 'Unassigned').trim() || 'Unassigned';
+    byId[assignee] = byId[assignee] || { assignee, items:[], blocker:0, stale:0 };
+    const row = { t, kind, detail:String(detail||'').trim() };
+    byId[assignee].items.push(row);
+    if(kind === 'blocked') byId[assignee].blocker++;
+    if(kind === 'staleTask' || kind === 'staleBlocker') byId[assignee].stale++;
+  };
+
+  if(cfg.checkinIncludeBlocked){
+    for(const t of (m.tasks || [])){
+      if(t.done) continue;
+      let unresolved = [];
+      try{ unresolved = (typeof phase4GetUnresolvedBlockers_ === 'function') ? phase4GetUnresolvedBlockers_(m, t) : []; }catch{}
+      if(unresolved.length) addItem(t, 'blocked', `${unresolved.length} blocker(s) unresolved`);
+    }
+  }
+
+  if(cfg.checkinIncludeStale && typeof phase11TaskLastTouchTs_ === 'function' && typeof phase11LoadSlaCfg_ === 'function'){
+    const slaCfg = phase11LoadSlaCfg_();
+    const now = Date.now();
+    const staleTaskMs = Math.max(1, Number(slaCfg.staleTaskDays || 5)) * 86400000;
+    const staleBlockerMs = Math.max(1, Number(slaCfg.staleBlockerDays || 2)) * 86400000;
+    for(const t of (m.tasks || [])){
+      if(t.done) continue;
+      const last = Number(phase11TaskLastTouchTs_(t) || t.createdAt || 0);
+      const age = Math.max(0, Math.floor((now - last)/86400000));
+      const thr = (t.severity === 'blocker') ? staleBlockerMs : staleTaskMs;
+      if(now - last >= thr){
+        addItem(t, t.severity === 'blocker' ? 'staleBlocker' : 'staleTask', `${age}d stale`);
+      }
+    }
+  }
+
+  const groups = Object.values(byId).map(g => {
+    const uniq = [];
+    const seen = new Set();
+    for(const it of g.items){ if(!seen.has(it.t.id + '|' + it.kind)){ seen.add(it.t.id + '|' + it.kind); uniq.push(it); } }
+    g.items = uniq.sort((a,b)=>{
+      const ra = a.t.severity === 'blocker' ? 3 : a.t.severity === 'high' ? 2 : 1;
+      const rb = b.t.severity === 'blocker' ? 3 : b.t.severity === 'high' ? 2 : 1;
+      return rb-ra || String(a.t.title).localeCompare(String(b.t.title));
+    });
+    return g;
+  }).sort((a,b)=> (b.blocker+a.items.length) - (a.blocker+b.items.length) || String(a.assignee).localeCompare(String(b.assignee)));
+
+  return { p, m, groups };
+}
+
+function phase12GenerateAssigneeCheckins_(){
+  const { p, m, groups } = phase12BuildCheckinCandidatesForActiveMilestone_();
+  if(!p || !m){ alert('Select an active project and milestone first.'); return; }
+  if(!groups.length){ alert('No stale/blocker check-in candidates found in the active milestone.'); return; }
+  const dateKey = new Date().toISOString().slice(0,10);
+  const cfg = phase12LoadCfg_();
+  const dueAt = phase12TomorrowDueTs_(cfg.checkinDueHour || 9);
+  let created = 0, skipped = 0;
+  m.tasks = Array.isArray(m.tasks) ? m.tasks : [];
+  for(const g of groups){
+    const assigneeLabel = g.assignee;
+    const title = `Check-in: ${assigneeLabel} • ${dateKey}`;
+    const dup = (m.tasks || []).find(t => String(t.title||'') === title);
+    if(dup){ skipped++; continue; }
+    const t = (typeof mkTask === 'function') ? mkTask(title, false) : { id:uid(), title, done:false, severity:'normal', assignee:'', createdAt:Date.now(), steps:[] };
+    t.assignee = assigneeLabel === 'Unassigned' ? '' : assigneeLabel;
+    t.severity = g.blocker > 0 ? 'high' : 'normal';
+    t.dueAt = dueAt;
+    t.notes = `Generated by Phase12 check-in generator for ${p.name} / ${m.title}.\nItems: ${g.items.length} (blocked ${g.blocker}, stale ${g.stale}).`;
+    t.steps = g.items.slice(0,12).map((it, idx) => ({ id: uid(), text: `${idx+1}. Follow up: ${it.t.title} [${it.kind}]${it.detail ? ' — ' + it.detail : ''}`, done:false, children:[] }));
+    if(g.items.length > 12){ t.steps.push({ id: uid(), text:`${g.items.length-12} more item(s) not listed`, done:false, children:[] }); }
+    t.phase12CheckinMeta = { generatedAt: Date.now(), assignee: assigneeLabel, sourceKinds: { blocker:g.blocker, stale:g.stale }, sourceMilestoneId: m.id };
+    m.tasks.unshift(t);
+    created++;
+  }
+  if(!created){ alert('Check-in tasks for today already exist in this milestone.'); return; }
+  addActivity(`Phase12 generated ${created} assignee check-in task(s)${skipped ? ` (skipped ${skipped} duplicate)` : ''}`);
+  saveState();
+  renderAll();
+}
+
+function phase12RenderCheckinPanel_(){
+  const box = document.querySelector('#phase12CheckinPanel');
+  if(!box) return;
+  const cfg = phase12LoadCfg_();
+  const { p, m, groups } = phase12BuildCheckinCandidatesForActiveMilestone_();
+  const totalItems = groups.reduce((n,g)=> n + g.items.length, 0);
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Assignee Check-in Generator</div><div class="phase8-item__meta">Create follow-up tasks from stale + blocked workload</div></div>
+    <div class="phase12-note" style="margin-top:6px">Scope: ${p&&m ? `${escapeHtml(p.name)} • ${escapeHtml(m.title)}` : 'Select active project + milestone'}.</div>
+    <div class="phase12-toolbar" style="margin-top:8px">
+      <label class="phase12-check"><span>Include stale</span><input type="checkbox" id="phase12CheckinIncludeStale" ${cfg.checkinIncludeStale ? 'checked' : ''}></label>
+      <label class="phase12-check"><span>Include blocked</span><input type="checkbox" id="phase12CheckinIncludeBlocked" ${cfg.checkinIncludeBlocked ? 'checked' : ''}></label>
+      <label class="phase12-check"><span>Due hour (next day)</span><input class="input phase12-inlineNum" type="number" min="0" max="23" id="phase12CheckinDueHour" value="${Number(cfg.checkinDueHour||9)}"></label>
+      <button class="btn btn--ghost" type="button" id="phase12BtnCheckinRefresh">Refresh</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnGenerateCheckins" ${p&&m ? '' : 'disabled'}>Generate Check-ins</button>
+    </div>
+    <div class="phase12-kv">
+      <div><b>Assignees</b><span>${groups.length}</span></div>
+      <div><b>Candidate items</b><span>${totalItems}</span></div>
+      <div><b>Blocked groups</b><span>${groups.filter(g=>g.blocker>0).length}</span></div>
+      <div><b>Next due time</b><span>${new Date(phase12TomorrowDueTs_(cfg.checkinDueHour||9)).toLocaleString()}</span></div>
+    </div>
+    <div class="phase12-list" id="phase12CheckinList"></div>
+  `;
+  const list = box.querySelector('#phase12CheckinList');
+  if(!groups.length){
+    list.innerHTML = `<div class="phase8-empty">No stale/blocker candidates in the active milestone using current filters.</div>`;
+  }else{
+    for(const g of groups.slice(0,12)){
+      const row = document.createElement('div');
+      row.className = 'phase12-row';
+      row.innerHTML = `
+        <div>
+          <div class="phase12-row__name">${escapeHtml(g.assignee)}</div>
+          <div class="phase12-row__meta">${g.items.length} item(s) • blocked ${g.blocker} • stale ${g.stale}</div>
+        </div>
+        <div class="phase12-tags">
+          ${g.blocker ? `<span class="phase12-tag risk">blocked ${g.blocker}</span>` : ''}
+          ${g.stale ? `<span class="phase12-tag warn">stale ${g.stale}</span>` : ''}
+          <button class="btn btn--ghost" type="button" data-open>Focus</button>
+        </div>
+      `;
+      row.querySelector('[data-open]')?.addEventListener('click', () => {
+        if(!p || !m) return;
+        setActiveProject(p.id); setActiveMilestone(m.id); switchTab('checklist');
+        const tid = g.items[0]?.t?.id;
+        setTimeout(()=>{
+          if(tid && typeof phase8FocusTask_ === 'function'){
+            try{ phase8FocusTask_({ p, ms:m, t:g.items[0].t }); return; }catch{}
+          }
+          document.querySelector('#taskList')?.scrollIntoView({behavior:'smooth', block:'start'});
+        }, 30);
+      });
+      list.appendChild(row);
+    }
+  }
+  const saveUiCfg = () => {
+    cfg.checkinIncludeStale = !!box.querySelector('#phase12CheckinIncludeStale')?.checked;
+    cfg.checkinIncludeBlocked = !!box.querySelector('#phase12CheckinIncludeBlocked')?.checked;
+    cfg.checkinDueHour = Math.max(0, Math.min(23, Number(box.querySelector('#phase12CheckinDueHour')?.value || cfg.checkinDueHour)));
+    phase12SaveCfg_();
+  };
+  box.querySelector('#phase12BtnCheckinRefresh')?.addEventListener('click', () => { saveUiCfg(); phase12RenderCheckinPanel_(); });
+  box.querySelector('#phase12BtnGenerateCheckins')?.addEventListener('click', () => { saveUiCfg(); phase12GenerateAssigneeCheckins_(); });
+}
+
+function phase12EnhanceDashViewsPanel_(){
+  const box = document.querySelector('#phase11DashViewsPanel');
+  if(!box || box.querySelector('#phase12DashViewsIoBox')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'phase12DashViewsIoBox';
+  wrap.className = 'phase12-box';
+  wrap.style.marginTop = '8px';
+  wrap.innerHTML = `
+    <div class="phase12-title">Phase 12 Dashboard Views Import / Export</div>
+    <div class="phase12-note">Portable backup for Phase 11 saved dashboard views. Export to JSON and import later after browser reset or on another machine.</div>
+    <div class="phase12-toolbar" style="margin-top:8px">
+      <button class="btn btn--ghost" type="button" id="phase12BtnExportDashViewsJson">Export JSON</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnImportDashViewsJson">Import JSON</button>
+      <label class="phase12-check"><span>Replace on import</span><input type="checkbox" id="phase12DashViewsReplace"></label>
+      <input type="file" id="phase12DashViewsFile" accept="application/json,.json" style="display:none" />
+    </div>
+  `;
+  const host = box.querySelector('.phase11-list') || box;
+  host.parentNode.insertBefore(wrap, host);
+  const cfg = phase12LoadCfg_();
+  const replaceCb = wrap.querySelector('#phase12DashViewsReplace');
+  if(replaceCb) replaceCb.checked = (cfg.dashViewImportMode === 'replace');
+  replaceCb?.addEventListener('change', (e) => { cfg.dashViewImportMode = e.target.checked ? 'replace' : 'merge'; phase12SaveCfg_(); });
+  wrap.querySelector('#phase12BtnExportDashViewsJson')?.addEventListener('click', () => {
+    const arr = (typeof phase11LoadDashViews_ === 'function') ? phase11LoadDashViews_() : [];
+    const payload = { version: 1, exportedAt: Date.now(), type: 'phase11_dashboard_views', views: Array.isArray(arr) ? arr : [] };
+    downloadText(`dashboard_views_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    addActivity(`Phase12 exported dashboard views (${(payload.views||[]).length})`);
+    saveState({ skipHistory:true });
+  });
+  wrap.querySelector('#phase12BtnImportDashViewsJson')?.addEventListener('click', () => wrap.querySelector('#phase12DashViewsFile')?.click());
+  wrap.querySelector('#phase12DashViewsFile')?.addEventListener('change', async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if(!file) return;
+    let txt = '';
+    try{ txt = await file.text(); }catch{ alert('Could not read selected file.'); return; }
+    let data = null;
+    try{ data = JSON.parse(txt); }catch{ alert('Invalid JSON file.'); return; }
+    let views = Array.isArray(data?.views) ? data.views : (Array.isArray(data) ? data : null);
+    if(!views){ alert('No dashboard views found in this file.'); return; }
+    views = views.filter(Boolean).map(v => (typeof phase11NormalizeDashView_ === 'function') ? phase11NormalizeDashView_(v) : v);
+    const mode = cfg.dashViewImportMode === 'replace' ? 'replace' : 'merge';
+    const okImport = await pmConfirmDialog_(`Import ${views.length} dashboard view(s)? Mode: ${mode}.`, { title:'Import Dashboard Views', okText:'Import' });
+    if(!okImport) return;
+    let next = [];
+    if(mode === 'replace') next = views.slice(0, 50);
+    else {
+      const cur = (typeof phase11LoadDashViews_ === 'function') ? phase11LoadDashViews_().slice() : [];
+      const byKey = new Map();
+      for(const v of cur){ byKey.set(String(v.id||v.name||uid()), v); }
+      for(const v of views){ byKey.set(String(v.id||v.name||uid()), v); }
+      next = Array.from(byKey.values()).sort((a,b)=> Number(b.updatedAt||0)-Number(a.updatedAt||0)).slice(0, 50);
+    }
+    if(typeof phase11State_ === 'object') phase11State_.dashViews = next;
+    if(typeof phase11SaveDashViews_ === 'function') phase11SaveDashViews_();
+    else try{ localStorage.setItem(typeof PHASE11_DASH_VIEWS_KEY !== 'undefined' ? PHASE11_DASH_VIEWS_KEY : 'stark_pm_phase11_dashboard_views_v1', JSON.stringify(next)); }catch{}
+    addActivity(`Phase12 imported dashboard views (${views.length}, ${mode})`);
+    saveState({ skipHistory:true });
+    try{ phase11RenderDashViewsPanel_(); }catch{ renderAll(); }
+    try{ phase12RenderDashViewsIoPanel_(); }catch{}
+  });
+}
+
+function phase12RenderDashViewsIoPanel_(){
+  const box = document.querySelector('#phase12DashViewsIoPanel');
+  if(!box) return;
+  const cfg = phase12LoadCfg_();
+  const views = (typeof phase11LoadDashViews_ === 'function') ? phase11LoadDashViews_() : [];
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Dashboard Views Portability</div><div class="phase8-item__meta">Backup/import saved dashboard jump presets</div></div>
+    <div class="phase12-note" style="margin-top:6px">This mirrors the Phase 11 dashboard views and lets you export/import portable JSON without using the dashboard views panel directly.</div>
+    <div class="phase12-toolbar" style="margin-top:8px">
+      <button class="btn btn--ghost" type="button" id="phase12BtnOpenDashViewsSection">Open Dashboard Views</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnDashViewsExport2">Export JSON</button>
+      <button class="btn btn--ghost" type="button" id="phase12BtnDashViewsImport2">Import JSON</button>
+      <label class="phase12-check"><span>Replace mode</span><input type="checkbox" id="phase12DashIoReplace" ${cfg.dashViewImportMode === 'replace' ? 'checked' : ''}></label>
+    </div>
+    <div class="phase12-kv">
+      <div><b>Saved views</b><span>${Array.isArray(views) ? views.length : 0}</span></div>
+      <div><b>Import mode</b><span>${cfg.dashViewImportMode}</span></div>
+      <div><b>Latest updated</b><span>${views?.[0]?.updatedAt ? new Date(Number(views[0].updatedAt)).toLocaleDateString() : '—'}</span></div>
+      <div><b>Status</b><span>ready</span></div>
+    </div>
+    <div class="phase12-pre">${escapeHtml((views || []).slice(0,8).map(v => `${v.name}${v.targetId ? ' • ' + v.targetId : ''}`).join('\n') || 'No saved dashboard views yet.')}</div>
+  `;
+  box.querySelector('#phase12BtnOpenDashViewsSection')?.addEventListener('click', phase12OpenDashViewsIo_);
+  box.querySelector('#phase12BtnDashViewsExport2')?.addEventListener('click', () => document.querySelector('#phase12BtnExportDashViewsJson')?.click());
+  box.querySelector('#phase12BtnDashViewsImport2')?.addEventListener('click', () => document.querySelector('#phase12BtnImportDashViewsJson')?.click());
+  box.querySelector('#phase12DashIoReplace')?.addEventListener('change', (e) => { cfg.dashViewImportMode = e.target.checked ? 'replace' : 'merge'; phase12SaveCfg_(); phase12RenderDashViewsIoPanel_(); });
+}
+
+try{ initPhase12_(); }catch(err){ console.warn('Phase12 init failed', err); }
+
+
+
+/* =========================================================
+   Phase 13 Workflow Automation & Recurrence (Additive Patch)
+   - Recurring generation sweeper (repair/automation)
+   - SLA action rules engine (auto nudge/assign/escalate)
+   - Digest scheduler presets (risk/status exports)
+   - Mention follow-up tracking states (nudged/ack/reopen)
+   - Bulk milestone maintenance tools
+========================================================= */
+var PHASE13_CFG_KEY = 'stark_pm_phase13_cfg_v1';
+var PHASE13_MARKS_KEY = 'stark_pm_phase13_marks_v1';
+var PHASE13_DIGEST_PRESETS_KEY = 'stark_pm_phase13_digest_presets_v1';
+var PHASE13_FOLLOWUP_UI_KEY = 'stark_pm_phase13_followup_ui_v1';
+
+var phase13State_ = {
+  inited:false,
+  cfg:null,
+  marks:null,
+  digestPresets:null,
+  followupUi:null,
+};
+
+function initPhase13_(){
+  if(phase13State_.inited) return;
+  phase13State_.inited = true;
+  try{ phase13InjectStyles_(); }catch(err){ console.warn('Phase13 styles failed', err); }
+  try{ phase13WrapCore_(); }catch(err){ console.warn('Phase13 core wrap failed', err); }
+  try{ phase13EnsureTopbarButtons_(); }catch(err){ console.warn('Phase13 topbar failed', err); }
+  try{ phase13EnsureDigestPresetImportInput_(); }catch(err){}
+}
+
+function phase13InjectStyles_(){
+  if(document.querySelector('#phase13Styles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase13Styles';
+  st.textContent = `
+    .phase13-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase13-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase13-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .phase13-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase13-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .phase13-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+    .phase13-kv>div{padding:8px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(255,255,255,.01)}
+    .phase13-kv b{display:block;font-size:11px;opacity:.72;margin-bottom:3px}
+    .phase13-kv span{font-size:13px;font-weight:700}
+    .phase13-note{font-size:11px;opacity:.8;line-height:1.35}
+    .phase13-list{display:grid;gap:8px;margin-top:8px}
+    .phase13-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase13-row__name{font-weight:700;font-size:12px}
+    .phase13-row__meta{font-size:11px;opacity:.78;line-height:1.3}
+    .phase13-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .phase13-tag{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(255,255,255,.08);border-radius:999px;padding:2px 8px;font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+    .phase13-tag.warn{border-color:rgba(255,191,92,.25)}
+    .phase13-tag.risk{border-color:rgba(255,107,107,.28)}
+    .phase13-inlineNum{width:86px}
+    .phase13-check{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .phase13-pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.35;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.14);margin-top:8px}
+    @media (max-width: 980px){ .phase13-grid{grid-template-columns:1fr} .phase13-kv{grid-template-columns:1fr} .phase13-row{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase13DefaultCfg_(){
+  return {
+    recurringEnabled: true,
+    recurringAutoRun: false,
+    recurringScopeAllProjects: true,
+    recurringMaxPerRun: 6,
+    recurringCooldownMin: 30,
+
+    slaRulesEnabled: false,
+    slaRulesAutoRun: false,
+    slaRulesScopeAllProjects: true,
+    slaRulesCooldownMin: 60,
+    slaRulesFallbackAssignee: '',
+    slaRulesAutoNudge: true,
+    slaRulesAutoAssignUnassigned: true,
+    slaRulesAutoEscalate: true,
+    slaRulesEscalateExtraDays: 3,
+
+    bulkOpenOnly: true,
+    bulkShiftDays: 1,
+    bulkAssignee: '',
+    bulkSeverity: 'high',
+  };
+}
+function phase13LoadCfg_(){
+  if(phase13State_.cfg) return phase13State_.cfg;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE13_CFG_KEY) || 'null'); }catch{}
+  const d = phase13DefaultCfg_();
+  const x = (raw && typeof raw === 'object') ? raw : {};
+  phase13State_.cfg = {
+    recurringEnabled: x.recurringEnabled !== false,
+    recurringAutoRun: !!x.recurringAutoRun,
+    recurringScopeAllProjects: x.recurringScopeAllProjects !== false,
+    recurringMaxPerRun: Math.max(1, Math.min(50, Number(x.recurringMaxPerRun || d.recurringMaxPerRun))),
+    recurringCooldownMin: Math.max(1, Math.min(1440, Number(x.recurringCooldownMin || d.recurringCooldownMin))),
+
+    slaRulesEnabled: !!x.slaRulesEnabled,
+    slaRulesAutoRun: !!x.slaRulesAutoRun,
+    slaRulesScopeAllProjects: x.slaRulesScopeAllProjects !== false,
+    slaRulesCooldownMin: Math.max(1, Math.min(1440, Number(x.slaRulesCooldownMin || d.slaRulesCooldownMin))),
+    slaRulesFallbackAssignee: String(x.slaRulesFallbackAssignee || ''),
+    slaRulesAutoNudge: x.slaRulesAutoNudge !== false,
+    slaRulesAutoAssignUnassigned: x.slaRulesAutoAssignUnassigned !== false,
+    slaRulesAutoEscalate: x.slaRulesAutoEscalate !== false,
+    slaRulesEscalateExtraDays: Math.max(0, Math.min(60, Number(x.slaRulesEscalateExtraDays ?? d.slaRulesEscalateExtraDays))),
+
+    bulkOpenOnly: x.bulkOpenOnly !== false,
+    bulkShiftDays: Number.isFinite(Number(x.bulkShiftDays)) ? Math.max(-365, Math.min(365, Number(x.bulkShiftDays))) : d.bulkShiftDays,
+    bulkAssignee: String(x.bulkAssignee || ''),
+    bulkSeverity: (String(x.bulkSeverity||'') === 'blocker' || String(x.bulkSeverity||'') === 'high' || String(x.bulkSeverity||'') === 'normal') ? String(x.bulkSeverity) : d.bulkSeverity,
+  };
+  return phase13State_.cfg;
+}
+function phase13SaveCfg_(){ try{ localStorage.setItem(PHASE13_CFG_KEY, JSON.stringify(phase13LoadCfg_())); }catch{} }
+
+function phase13LoadMarks_(){
+  if(phase13State_.marks) return phase13State_.marks;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE13_MARKS_KEY) || 'null'); }catch{}
+  const x = (raw && typeof raw === 'object') ? raw : {};
+  phase13State_.marks = {
+    recurring: (x.recurring && typeof x.recurring === 'object') ? x.recurring : {},
+    sla: (x.sla && typeof x.sla === 'object') ? x.sla : {},
+    engine: (x.engine && typeof x.engine === 'object') ? x.engine : { recurringLastRunTs:0, slaLastRunTs:0 },
+  };
+  return phase13State_.marks;
+}
+function phase13SaveMarks_(){ try{ localStorage.setItem(PHASE13_MARKS_KEY, JSON.stringify(phase13LoadMarks_())); }catch{} }
+function phase13PruneMarks_(){
+  const marks = phase13LoadMarks_();
+  const now = Date.now();
+  const TTL = 180 * 86400000; // ~6 months
+  const pruneMap = (obj) => {
+    let changed = false;
+    for(const [k,v] of Object.entries(obj || {})){
+      if(!Number.isFinite(Number(v)) || (now - Number(v)) > TTL){ delete obj[k]; changed = true; }
+    }
+    return changed;
+  };
+  const c1 = pruneMap(marks.recurring);
+  const c2 = pruneMap(marks.sla);
+  if(c1 || c2) phase13SaveMarks_();
+}
+
+function phase13LoadDigestPresets_(){
+  if(Array.isArray(phase13State_.digestPresets)) return phase13State_.digestPresets;
+  let arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(PHASE13_DIGEST_PRESETS_KEY) || '[]') || []; }catch{}
+  phase13State_.digestPresets = Array.isArray(arr) ? arr.filter(Boolean).map(phase13NormalizeDigestPreset_) : [];
+  return phase13State_.digestPresets;
+}
+function phase13SaveDigestPresets_(){ try{ localStorage.setItem(PHASE13_DIGEST_PRESETS_KEY, JSON.stringify((phase13LoadDigestPresets_()||[]).map(phase13NormalizeDigestPreset_))); }catch{} }
+function phase13NormalizeDigestPreset_(v){
+  return {
+    id: String(v?.id || uid()),
+    name: String(v?.name || 'Digest Preset').trim().slice(0,80) || 'Digest Preset',
+    kind: (String(v?.kind || 'risk') === 'status') ? 'status' : 'risk',
+    fmt: (String(v?.fmt || 'MD').toUpperCase() === 'TXT') ? 'TXT' : 'MD',
+    allProjects: !!v?.allProjects,
+    note: String(v?.note || '').slice(0,140),
+    createdAt: Number(v?.createdAt || Date.now()),
+    updatedAt: Number(v?.updatedAt || Date.now()),
+  };
+}
+
+function phase13LoadFollowupUi_(){
+  if(phase13State_.followupUi) return phase13State_.followupUi;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE13_FOLLOWUP_UI_KEY) || 'null'); }catch{}
+  const x = (raw && typeof raw === 'object') ? raw : {};
+  phase13State_.followupUi = {
+    filter: ['all','open','nudged','ack','done'].includes(String(x.filter||'')) ? String(x.filter) : 'open',
+    query: String(x.query || ''),
+  };
+  return phase13State_.followupUi;
+}
+function phase13SaveFollowupUi_(){ try{ localStorage.setItem(PHASE13_FOLLOWUP_UI_KEY, JSON.stringify(phase13LoadFollowupUi_())); }catch{} }
+
+function phase13WrapCore_(){
+  if(typeof renderDashboard === 'function' && !renderDashboard._phase13Wrapped){
+    const _orig = renderDashboard;
+    renderDashboard = function(){
+      const ret = _orig.apply(this, arguments);
+      try{ phase13MaybeRunEngines_('dashboard'); }catch(err){ console.warn('Phase13 engines dashboard failed', err); }
+      try{ phase13PostRenderDashboard_(); }catch(err){ console.warn('Phase13 dashboard render failed', err); }
+      return ret;
+    };
+    renderDashboard._phase13Wrapped = true;
+  }
+  if(typeof renderChecklist === 'function' && !renderChecklist._phase13Wrapped){
+    const _orig = renderChecklist;
+    renderChecklist = function(){
+      const ret = _orig.apply(this, arguments);
+      try{ phase13MaybeRunEngines_('checklist'); }catch(err){ console.warn('Phase13 engines checklist failed', err); }
+      try{ phase13PostRenderChecklist_(); }catch(err){ console.warn('Phase13 checklist render failed', err); }
+      return ret;
+    };
+    renderChecklist._phase13Wrapped = true;
+  }
+  if(typeof phase3BuildCmdkItems_ === 'function' && !phase3BuildCmdkItems_._phase13Wrapped){
+    const _orig = phase3BuildCmdkItems_;
+    phase3BuildCmdkItems_ = function(){
+      const arr = _orig.apply(this, arguments) || [];
+      arr.push(
+        { kind:'command', title:'Phase 13: Workflow Automation', sub:'Open dashboard automation panels', tag:'PH13', act:'phase13Dashboard' },
+        { kind:'command', title:'Phase 13: Bulk Milestone Maintenance', sub:'Open checklist bulk maintenance tools', tag:'PH13', act:'phase13Bulk' },
+        { kind:'command', title:'Phase 13: Run Automation Sweep', sub:'Run recurring + SLA rule engines now', tag:'PH13', act:'phase13Sweep' }
+      );
+      return arr;
+    };
+    phase3BuildCmdkItems_._phase13Wrapped = true;
+  }
+  if(typeof phase3RunCmdkAction_ === 'function' && !phase3RunCmdkAction_._phase13Wrapped){
+    const _orig = phase3RunCmdkAction_;
+    phase3RunCmdkAction_ = function(it){
+      if(it && it.act === 'phase13Dashboard'){ phase13OpenDashboard_(); return; }
+      if(it && it.act === 'phase13Bulk'){ phase13OpenBulkPanel_(); return; }
+      if(it && it.act === 'phase13Sweep'){ phase13RunAutomationSweepPrompt_(); return; }
+      return _orig.apply(this, arguments);
+    };
+    phase3RunCmdkAction_._phase13Wrapped = true;
+  }
+}
+
+function phase13EnsureTopbarButtons_(){
+  const topbarRight = document.querySelector('#topbarRight') || document.querySelector('.topbar__right') || document.querySelector('.topbar-right');
+  if(!topbarRight) return;
+  if(!document.querySelector('#phase13BtnAutomation')){
+    const btn = document.createElement('button');
+    btn.id = 'phase13BtnAutomation';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Automation+';
+    btn.title = 'Open Phase 13 workflow automation panels';
+    btn.addEventListener('click', phase13OpenDashboard_);
+    topbarRight.appendChild(btn);
+  }
+  if(!document.querySelector('#phase13BtnBulkMaint')){
+    const btn = document.createElement('button');
+    btn.id = 'phase13BtnBulkMaint';
+    btn.className = 'btn btn--ghost';
+    btn.type = 'button';
+    btn.textContent = 'Bulk Maint';
+    btn.title = 'Open Phase 13 bulk milestone maintenance panel';
+    btn.addEventListener('click', phase13OpenBulkPanel_);
+    topbarRight.appendChild(btn);
+  }
+}
+
+function phase13OpenDashboard_(){ openPanelInOwningTab_('#phase13DashboardHost', 'dashboard', 30); }
+function phase13OpenBulkPanel_(){ switchTab('checklist'); setTimeout(()=>document.querySelector('#phase13BulkMaintenancePanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); }
+
+function phase13MaybeRunEngines_(source){
+  const cfg = phase13LoadCfg_();
+  const marks = phase13LoadMarks_();
+  const now = Date.now();
+  phase13PruneMarks_();
+
+  if(cfg.recurringEnabled && cfg.recurringAutoRun){
+    const gap = Math.max(1, Number(cfg.recurringCooldownMin || 30)) * 60000;
+    if(now - Number(marks.engine.recurringLastRunTs || 0) >= gap){
+      const r = phase13RunRecurringGenerationSweep_({ auto:true, noRender:true, source:source });
+      if(r && r.generated > 0){
+        try{ saveState({ skipHistory:true }); }catch{}
+      }
+      marks.engine.recurringLastRunTs = Date.now();
+      phase13SaveMarks_();
+    }
+  }
+  if(cfg.slaRulesEnabled && cfg.slaRulesAutoRun){
+    const gap = Math.max(1, Number(cfg.slaRulesCooldownMin || 60)) * 60000;
+    if(now - Number(marks.engine.slaLastRunTs || 0) >= gap){
+      const r = phase13RunSlaRulesEngine_({ auto:true, noRender:true, source:source });
+      if(r && r.changed){
+        try{ saveState({ skipHistory:true }); }catch{}
+      }
+      marks.engine.slaLastRunTs = Date.now();
+      phase13SaveMarks_();
+    }
+  }
+}
+
+function phase13AllTaskEntries_(){
+  if(typeof phase12AllTaskEntries_ === 'function') return phase12AllTaskEntries_() || [];
+  const rows = [];
+  for(const p of (state.projects || [])){
+    for(const mod of (p.modules || [])){
+      for(const ms of (mod.milestones || [])){
+        for(const t of (ms.tasks || [])) rows.push({ p, mod, ms, t });
+      }
+    }
+  }
+  return rows;
+}
+
+function phase13DateKey_(ts){
+  const d = new Date(Number(ts || Date.now()));
+  return d.toISOString().slice(0,10);
+}
+
+function phase13RecurringCandidateRows_(opts){
+  const cfg = phase13LoadCfg_();
+  const onlyActiveProject = !(opts && opts.scopeAllProjects !== undefined ? !!opts.scopeAllProjects : !!cfg.recurringScopeAllProjects);
+  const active = getActiveProject && getActiveProject();
+  const rows = [];
+  for(const e of phase13AllTaskEntries_()){
+    if(onlyActiveProject && active && e.p && String(e.p.id) !== String(active.id)) continue;
+    const t = e.t || {};
+    try{ if(typeof phase5NormalizeTaskMeta_ === 'function') phase5NormalizeTaskMeta_(t); }catch{}
+    const every = Math.max(0, Number(t.recurrenceDays || 0));
+    if(!(every > 0)) continue;
+    if(!t.done) continue;
+    rows.push(e);
+  }
+  return rows;
+}
+function phase13HasFutureRecurringSibling_(ms, srcTask){
+  if(!ms || !Array.isArray(ms.tasks)) return false;
+  const every = Math.max(0, Number(srcTask?.recurrenceDays || 0));
+  if(!(every > 0)) return false;
+  const srcCreated = Number(srcTask?.createdAt || 0);
+  const srcDue = Number(srcTask?.dueAt || 0);
+  const maxTs = (srcDue > 0 ? srcDue : srcCreated) + (every * 3 * 86400000);
+  const normTitle = String(srcTask?.title || '').trim().toLowerCase();
+  for(const t of (ms.tasks || [])){
+    if(!t || String(t.id) === String(srcTask.id)) continue;
+    const tEvery = Math.max(0, Number(t.recurrenceDays || 0));
+    if(tEvery !== every) continue;
+    if(String(t.title || '').trim().toLowerCase() !== normTitle) continue;
+    const tCreated = Number(t.createdAt || 0);
+    const tDue = Number(t.dueAt || 0);
+    const anchor = tDue > 0 ? tDue : tCreated;
+    if(anchor <= (srcDue > 0 ? srcDue : srcCreated)) continue;
+    if(anchor > maxTs && maxTs > 0) continue;
+    if(!t.done) return true;
+  }
+  return false;
+}
+function phase13RunRecurringGenerationSweep_(opts){
+  opts = opts || {};
+  const cfg = phase13LoadCfg_();
+  const marks = phase13LoadMarks_();
+  if(!cfg.recurringEnabled) return { generated:0, scanned:0, skipped:0, reasons:{} };
+  const maxRun = Math.max(1, Number(opts.maxPerRun || cfg.recurringMaxPerRun || 6));
+  const rows = phase13RecurringCandidateRows_({ scopeAllProjects: (opts.scopeAllProjects !== undefined ? !!opts.scopeAllProjects : !!cfg.recurringScopeAllProjects) });
+  let generated = 0, skipped = 0;
+  const reasons = { futureExists:0, marked:0, noFn:0 };
+  for(const e of rows){
+    if(generated >= maxRun) break;
+    const t = e.t;
+    const cycleKey = `rgen|${e.p.id}|${e.ms.id}|${t.id}|${phase13DateKey_(Number(t.dueAt || t.createdAt || Date.now()))}|${Math.max(1, Number(t.recurrenceDays || 1))}`;
+    if(marks.recurring[cycleKey]){ skipped++; reasons.marked++; continue; }
+    if(phase13HasFutureRecurringSibling_(e.ms, t)){ skipped++; reasons.futureExists++; marks.recurring[cycleKey] = Date.now(); continue; }
+    if(typeof phase5GenerateNextRecurringTask_ !== 'function'){ skipped++; reasons.noFn++; break; }
+    try{
+      phase5GenerateNextRecurringTask_(e.ms, t);
+      generated++;
+      marks.recurring[cycleKey] = Date.now();
+      addActivity(`Phase13 recurring sweep generated next task: ${t.title} • ${e.p?.name || ''} / ${e.ms?.title || ''}`);
+    }catch(err){
+      console.warn('Phase13 recurring sweep generate failed', err);
+    }
+  }
+  phase13SaveMarks_();
+  if(generated && !opts.noRender){
+    try{ saveState(); }catch{}
+    try{ renderAll(); }catch{}
+  }
+  return { generated, scanned: rows.length, skipped, reasons };
+}
+
+function phase13EnsureTaskComments_(t){
+  try{ if(typeof phase12EnsureTaskCommentsArray_ === 'function') return phase12EnsureTaskCommentsArray_(t); }catch{}
+  if(!Array.isArray(t.comments)) t.comments = [];
+  return t.comments;
+}
+function phase13TaskRefKey_(r){ return r && r.e && r.t ? `${r.e.p.id}|${r.e.ms.id}|${r.t.id}` : ''; }
+
+function phase13ApplySlaRuleNudge_(r){
+  if(!r || !r.t) return false;
+  const marks = phase13LoadMarks_();
+  const k = `nudge|${phase13TaskRefKey_(r)}|${phase13DateKey_()}`;
+  if(marks.sla[k]) return false;
+  const comments = phase13EnsureTaskComments_(r.t);
+  comments.push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: `Phase13 SLA auto-nudge: stale ${r.t.severity === 'blocker' ? 'blocker' : 'task'} review requested.` });
+  marks.sla[k] = Date.now();
+  return true;
+}
+function phase13ApplySlaRuleAssign_(r, fallbackAssignee){
+  if(!r || !r.t) return false;
+  const who = String(fallbackAssignee || '').trim();
+  if(!who) return false;
+  if(String(r.t.assignee || '').trim()) return false;
+  const marks = phase13LoadMarks_();
+  const k = `assign|${phase13TaskRefKey_(r)}|${who.toLowerCase()}`;
+  if(marks.sla[k]) return false;
+  r.t.assignee = who;
+  phase13EnsureTaskComments_(r.t).push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: `Phase13 SLA auto-assign fallback owner: ${who}` });
+  marks.sla[k] = Date.now();
+  return true;
+}
+function phase13ApplySlaRuleEscalate_(r, extraDays){
+  if(!r || !r.t) return false;
+  const t = r.t;
+  const cfg11 = (typeof phase11LoadSlaCfg_ === 'function') ? phase11LoadSlaCfg_() : { staleTaskDays:5, staleBlockerDays:2 };
+  const threshold = (t.severity === 'blocker' ? Number(cfg11.staleBlockerDays || 2) : Number(cfg11.staleTaskDays || 5)) + Math.max(0, Number(extraDays || 0));
+  if(Number(r.ageDays || 0) < threshold) return false;
+  let next = String(t.severity || 'normal');
+  if(next === 'normal') next = 'high';
+  else if(next === 'high') next = 'blocker';
+  else return false;
+  const marks = phase13LoadMarks_();
+  const k = `escalate|${phase13TaskRefKey_(r)}|${next}`;
+  if(marks.sla[k]) return false;
+  t.severity = next;
+  phase13EnsureTaskComments_(t).push({ id: uid(), ts: Date.now(), author: 'SYSTEM', text: `Phase13 SLA auto-escalation applied (${next.toUpperCase()}) after ${Math.max(0, Number(r.ageDays || 0))}d stale.` });
+  marks.sla[k] = Date.now();
+  return true;
+}
+
+function phase13RunSlaRulesEngine_(opts){
+  opts = opts || {};
+  const cfg = phase13LoadCfg_();
+  if(!cfg.slaRulesEnabled || typeof phase11CollectSlaAging_ !== 'function') return { changed:false, touched:0, nudge:0, assign:0, escalate:0, rows:0 };
+  const sla = phase11CollectSlaAging_({ onlyActiveProject: !(opts.scopeAllProjects !== undefined ? !!opts.scopeAllProjects : !!cfg.slaRulesScopeAllProjects) });
+  const rows = [];
+  const seen = new Set();
+  for(const r of (sla.staleBlockers || [])){ const k = phase13TaskRefKey_(r); if(k && !seen.has(k)){ seen.add(k); rows.push(r); } }
+  for(const r of (sla.staleTasks || [])){ const k = phase13TaskRefKey_(r); if(k && !seen.has(k)){ seen.add(k); rows.push(r); } }
+
+  let nudge = 0, assign = 0, escalate = 0;
+  for(const r of rows){
+    if(cfg.slaRulesAutoNudge && phase13ApplySlaRuleNudge_(r)){ nudge++; addActivity(`Phase13 SLA auto-nudge: ${r.t.title}`); }
+    if(cfg.slaRulesAutoAssignUnassigned && phase13ApplySlaRuleAssign_(r, cfg.slaRulesFallbackAssignee)){ assign++; addActivity(`Phase13 SLA auto-assign: ${r.t.title} -> ${r.t.assignee}`); }
+    if(cfg.slaRulesAutoEscalate && phase13ApplySlaRuleEscalate_(r, cfg.slaRulesEscalateExtraDays)){ escalate++; addActivity(`Phase13 SLA auto-escalate: ${r.t.title} -> ${r.t.severity}`); }
+  }
+  const changed = !!(nudge || assign || escalate);
+  phase13SaveMarks_();
+  if(changed){
+    try{ saveState(opts.noRender ? { skipHistory:true } : undefined); }catch{}
+    if(!opts.noRender) try{ renderAll(); }catch{}
+  }
+  return { changed, touched:(nudge+assign+escalate), nudge, assign, escalate, rows: rows.length, staleRows: rows.length };
+}
+
+async function phase13RunAutomationSweepPrompt_(){
+  const doRec = await pmConfirmDialog_('Run Phase13 recurring generation sweep now? Click OK to run both engines, Cancel to open dashboard only.', { title:'Run Automation Sweep', okText:'Run Sweep' });
+  if(!doRec){ phase13OpenDashboard_(); return; }
+  const r1 = phase13RunRecurringGenerationSweep_({ noRender:true });
+  const r2 = phase13RunSlaRulesEngine_({ noRender:true });
+  try{ saveState({ skipHistory:true }); }catch{}
+  try{ renderAll(); }catch{}
+  alert(`Phase13 automation sweep complete.\nRecurring generated: ${r1.generated}/${r1.scanned}\nSLA actions: ${r2.touched} (nudge ${r2.nudge}, assign ${r2.assign}, escalate ${r2.escalate})`);
+}
+
+function phase13PostRenderDashboard_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  let host = document.querySelector('#phase13DashboardHost');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'phase13DashboardHost';
+    host.className = 'phase13-box';
+    host.innerHTML = `
+      <div class="phase13-title">Phase 13 Workflow Automation & Recurrence</div>
+      <div class="phase13-grid" id="phase13GridA">
+        <div class="phase13-card" id="phase13RecurringPanel"></div>
+        <div class="phase13-card" id="phase13SlaRulesPanel"></div>
+      </div>
+      <div class="phase13-grid" id="phase13GridB" style="margin-top:10px">
+        <div class="phase13-card" id="phase13DigestPresetsPanel"></div>
+        <div class="phase13-card" id="phase13FollowupStatesPanel"></div>
+      </div>
+    `;
+    tab.appendChild(host);
+  }
+  phase13RenderRecurringPanel_();
+  phase13RenderSlaRulesPanel_();
+  phase13RenderDigestPresetsPanel_();
+  phase13RenderFollowupStatesPanel_();
+}
+
+function phase13PostRenderChecklist_(){
+  const taskList = document.querySelector('#taskList');
+  if(!taskList || !taskList.parentElement) return;
+  let box = document.querySelector('#phase13BulkMaintenancePanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase13BulkMaintenancePanel';
+    box.className = 'card';
+    box.style.marginTop = '10px';
+    box.innerHTML = `
+      <div class="card__top">
+        <div>
+          <div class="card__label">Bulk Milestone Maintenance</div>
+          <div class="card__hint">Phase 13 mass actions for active milestone tasks (assign / severity / due date shift)</div>
+        </div>
+      </div>
+      <div class="phase13-box" style="margin-top:8px;padding:8px" id="phase13BulkMaintenanceBox"></div>
+    `;
+    taskList.parentElement.appendChild(box);
+  }
+  phase13RenderBulkMaintenancePanel_();
+}
+
+function phase13ActiveMilestoneCtx_(){
+  const p = getActiveProject ? getActiveProject() : null;
+  const m = p && getActiveMilestone ? getActiveMilestone(p) : null;
+  const mod = p && getActiveModule ? getActiveModule(p) : null;
+  return { p, m, mod };
+}
+
+function phase13RenderRecurringPanel_(){
+  const box = document.querySelector('#phase13RecurringPanel');
+  if(!box) return;
+  const cfg = phase13LoadCfg_();
+  const cands = phase13RecurringCandidateRows_({ scopeAllProjects: cfg.recurringScopeAllProjects });
+  const samples = cands.slice(0,6).map(e => `${e.t.title} • ${e.p.name} / ${e.ms.title} • R/${Math.max(1, Number(e.t.recurrenceDays||1))}d`);
+  const marks = phase13LoadMarks_();
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Recurring Generation Sweep</div><div class="phase8-item__meta">Repair/generate missing next recurring tasks</div></div>
+    <div class="phase13-note" style="margin-top:6px">This complements Phase 5 + Phase 7 by sweeping completed recurring tasks and generating missing next instances (useful after imports/manual edits).</div>
+    <div class="phase13-toolbar" style="margin-top:8px">
+      <label class="phase13-check"><span>Enabled</span><input type="checkbox" id="phase13RecEnabled" ${cfg.recurringEnabled ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Auto-run</span><input type="checkbox" id="phase13RecAuto" ${cfg.recurringAutoRun ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>All Projects</span><input type="checkbox" id="phase13RecAll" ${cfg.recurringScopeAllProjects ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Max/run</span><input class="input phase13-inlineNum" type="number" min="1" max="50" id="phase13RecMax" value="${Number(cfg.recurringMaxPerRun||6)}"></label>
+      <label class="phase13-check"><span>Cooldown min</span><input class="input phase13-inlineNum" type="number" min="1" max="1440" id="phase13RecCooldown" value="${Number(cfg.recurringCooldownMin||30)}"></label>
+      <button class="btn btn--ghost" type="button" id="phase13BtnRunRecurring">Run Now</button>
+    </div>
+    <div class="phase13-kv">
+      <div><b>Candidates</b><span>${cands.length}</span></div>
+      <div><b>Last engine run</b><span>${phase13LoadMarks_().engine.recurringLastRunTs ? new Date(Number(marks.engine.recurringLastRunTs)).toLocaleString() : '—'}</span></div>
+      <div><b>Scope</b><span>${cfg.recurringScopeAllProjects ? 'all projects' : 'active project'}</span></div>
+      <div><b>Status</b><span>${cfg.recurringEnabled ? (cfg.recurringAutoRun ? 'auto + manual' : 'manual') : 'disabled'}</span></div>
+    </div>
+    <div class="phase13-pre">${escapeHtml(samples.length ? samples.join('\n') : 'No completed recurring task candidates found.')}</div>
+  `;
+  const bindSave = () => {
+    cfg.recurringEnabled = !!box.querySelector('#phase13RecEnabled')?.checked;
+    cfg.recurringAutoRun = !!box.querySelector('#phase13RecAuto')?.checked;
+    cfg.recurringScopeAllProjects = !!box.querySelector('#phase13RecAll')?.checked;
+    cfg.recurringMaxPerRun = Math.max(1, Math.min(50, Number(box.querySelector('#phase13RecMax')?.value || cfg.recurringMaxPerRun)));
+    cfg.recurringCooldownMin = Math.max(1, Math.min(1440, Number(box.querySelector('#phase13RecCooldown')?.value || cfg.recurringCooldownMin)));
+    phase13SaveCfg_();
+  };
+  ['#phase13RecEnabled','#phase13RecAuto','#phase13RecAll','#phase13RecMax','#phase13RecCooldown'].forEach(sel => {
+    box.querySelector(sel)?.addEventListener('change', ()=>{ bindSave(); phase13RenderRecurringPanel_(); });
+  });
+  box.querySelector('#phase13BtnRunRecurring')?.addEventListener('click', () => {
+    bindSave();
+    const res = phase13RunRecurringGenerationSweep_();
+    alert(`Recurring sweep complete.\nGenerated: ${res.generated}\nScanned candidates: ${res.scanned}\nSkipped: ${res.skipped}`);
+    phase13RenderRecurringPanel_();
+  });
+}
+
+function phase13RenderSlaRulesPanel_(){
+  const box = document.querySelector('#phase13SlaRulesPanel');
+  if(!box) return;
+  const cfg = phase13LoadCfg_();
+  let sla = { staleBlockers:[], staleTasks:[] };
+  try{ if(typeof phase11CollectSlaAging_ === 'function') sla = phase11CollectSlaAging_({ onlyActiveProject: !cfg.slaRulesScopeAllProjects }); }catch{}
+  const preview = [];
+  (sla.staleBlockers || []).slice(0,4).forEach(r => preview.push(`[BLK ${r.ageDays}d] ${r.t?.title || 'Untitled'} • ${r.e?.p?.name || ''}`));
+  (sla.staleTasks || []).slice(0,4).forEach(r => preview.push(`[TASK ${r.ageDays}d] ${r.t?.title || 'Untitled'} • ${r.e?.p?.name || ''}`));
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">SLA Action Rules Engine</div><div class="phase8-item__meta">Auto nudge / assign fallback / escalate stale tasks</div></div>
+    <div class="phase13-note" style="margin-top:6px">Works on Phase 11 stale outputs and applies non-interactive actions (no prompts). Use auto-run carefully and set a fallback assignee if you want auto-assign enabled.</div>
+    <div class="phase13-toolbar" style="margin-top:8px">
+      <label class="phase13-check"><span>Enabled</span><input type="checkbox" id="phase13SlaEnabled" ${cfg.slaRulesEnabled ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Auto-run</span><input type="checkbox" id="phase13SlaAuto" ${cfg.slaRulesAutoRun ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>All Projects</span><input type="checkbox" id="phase13SlaAll" ${cfg.slaRulesScopeAllProjects ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Nudge</span><input type="checkbox" id="phase13SlaNudge" ${cfg.slaRulesAutoNudge ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Assign unassigned</span><input type="checkbox" id="phase13SlaAssign" ${cfg.slaRulesAutoAssignUnassigned ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Escalate</span><input type="checkbox" id="phase13SlaEscalate" ${cfg.slaRulesAutoEscalate ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Fallback owner</span><input class="input" id="phase13SlaFallback" value="${escapeHtml(String(cfg.slaRulesFallbackAssignee||''))}" placeholder="e.g. PM Lead"></label>
+      <label class="phase13-check"><span>Esc +days</span><input class="input phase13-inlineNum" type="number" min="0" max="60" id="phase13SlaEscDays" value="${Number(cfg.slaRulesEscalateExtraDays||3)}"></label>
+      <label class="phase13-check"><span>Cooldown min</span><input class="input phase13-inlineNum" type="number" min="1" max="1440" id="phase13SlaCooldown" value="${Number(cfg.slaRulesCooldownMin||60)}"></label>
+      <button class="btn btn--ghost" type="button" id="phase13BtnRunSlaRules">Run Now</button>
+    </div>
+    <div class="phase13-kv">
+      <div><b>Stale blockers</b><span>${(sla.staleBlockers||[]).length}</span></div>
+      <div><b>Stale tasks</b><span>${(sla.staleTasks||[]).length}</span></div>
+      <div><b>Last engine run</b><span>${phase13LoadMarks_().engine.slaLastRunTs ? new Date(Number(phase13LoadMarks_().engine.slaLastRunTs)).toLocaleString() : '—'}</span></div>
+      <div><b>Fallback owner</b><span>${escapeHtml(String(cfg.slaRulesFallbackAssignee || '—'))}</span></div>
+    </div>
+    <div class="phase13-pre">${escapeHtml(preview.length ? preview.join('\n') : 'No stale rows in current scope.')}</div>
+  `;
+  const saveCfg = () => {
+    cfg.slaRulesEnabled = !!box.querySelector('#phase13SlaEnabled')?.checked;
+    cfg.slaRulesAutoRun = !!box.querySelector('#phase13SlaAuto')?.checked;
+    cfg.slaRulesScopeAllProjects = !!box.querySelector('#phase13SlaAll')?.checked;
+    cfg.slaRulesAutoNudge = !!box.querySelector('#phase13SlaNudge')?.checked;
+    cfg.slaRulesAutoAssignUnassigned = !!box.querySelector('#phase13SlaAssign')?.checked;
+    cfg.slaRulesAutoEscalate = !!box.querySelector('#phase13SlaEscalate')?.checked;
+    cfg.slaRulesFallbackAssignee = String(box.querySelector('#phase13SlaFallback')?.value || '').trim();
+    cfg.slaRulesEscalateExtraDays = Math.max(0, Math.min(60, Number(box.querySelector('#phase13SlaEscDays')?.value || cfg.slaRulesEscalateExtraDays)));
+    cfg.slaRulesCooldownMin = Math.max(1, Math.min(1440, Number(box.querySelector('#phase13SlaCooldown')?.value || cfg.slaRulesCooldownMin)));
+    phase13SaveCfg_();
+  };
+  ['#phase13SlaEnabled','#phase13SlaAuto','#phase13SlaAll','#phase13SlaNudge','#phase13SlaAssign','#phase13SlaEscalate','#phase13SlaFallback','#phase13SlaEscDays','#phase13SlaCooldown'].forEach(sel=>{
+    box.querySelector(sel)?.addEventListener('change', ()=>{ saveCfg(); phase13RenderSlaRulesPanel_(); });
+  });
+  box.querySelector('#phase13BtnRunSlaRules')?.addEventListener('click', () => {
+    saveCfg();
+    const res = phase13RunSlaRulesEngine_();
+    alert(`SLA rules run complete.\nActions: ${res.touched}\n- Nudge: ${res.nudge}\n- Assign: ${res.assign}\n- Escalate: ${res.escalate}\nRows scanned: ${res.rows}`);
+    phase13RenderSlaRulesPanel_();
+  });
+}
+
+function phase13RunDigestPreset_(preset){
+  const p = phase13NormalizeDigestPreset_(preset);
+  if(p.kind === 'risk'){
+    if(typeof phase12BuildRiskDigestData_ !== 'function' || typeof phase12BuildRiskDigestText_ !== 'function'){
+      alert('Phase 12 risk digest functions not found.');
+      return;
+    }
+    const data = phase12BuildRiskDigestData_({ allProjects: !!p.allProjects });
+    const txt = phase12BuildRiskDigestText_(p.fmt, data);
+    const fn = `digest_preset_${String(p.kind)}_${p.allProjects?'all':'active'}_${new Date().toISOString().slice(0,10)}.${p.fmt === 'MD' ? 'md' : 'txt'}`;
+    downloadText(fn, txt, p.fmt === 'MD' ? 'text/markdown' : 'text/plain');
+    addActivity(`Phase13 ran digest preset: ${p.name} (${p.kind}/${p.fmt})`);
+    try{ saveState({ skipHistory:true }); }catch{}
+    return;
+  }
+  if(p.kind === 'status'){
+    if(typeof phase10BuildStatusReport_ !== 'function'){
+      alert('Phase 10 status export functions not found.');
+      return;
+    }
+    const text = phase10BuildStatusReport_(String(p.fmt || 'MD').toLowerCase() === 'TXT'.toLowerCase() ? 'txt' : 'md');
+    if(!text){ alert('Select an active project to run a status preset.'); return; }
+    const active = getActiveProject ? getActiveProject() : null;
+    const safe = String(active?.name || 'project').replace(/[^a-z0-9\-_]+/ig,'_').slice(0,50) || 'project';
+    const fn = `${safe}_status_preset_${new Date().toISOString().slice(0,10)}.${p.fmt === 'MD' ? 'md' : 'txt'}`;
+    downloadText(fn, text, p.fmt === 'MD' ? 'text/markdown' : 'text/plain');
+    addActivity(`Phase13 ran digest preset: ${p.name} (${p.kind}/${p.fmt})`);
+    try{ saveState({ skipHistory:true }); }catch{}
+    return;
+  }
+}
+
+function phase13EnsureDigestPresetImportInput_(){
+  if(document.querySelector('#phase13DigestPresetInput')) return;
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.id = 'phase13DigestPresetInput';
+  inp.accept = '.json,application/json';
+  inp.style.display = 'none';
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0];
+    if(!f) return;
+    try{
+      const text = await f.text();
+      const parsed = JSON.parse(text);
+      let arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.presets) ? parsed.presets : []);
+      arr = arr.filter(Boolean).map(phase13NormalizeDigestPreset_);
+      if(!arr.length){ alert('No valid presets found in file.'); return; }
+      const modeReplace = await pmConfirmDialog_(`Import ${arr.length} preset(s)?\nOK = replace existing presets\nCancel = merge`, { title:'Import Digest Presets', okText:'Replace' });
+      let next = [];
+      if(modeReplace) next = arr;
+      else {
+        const cur = phase13LoadDigestPresets_().slice();
+        const byKey = Object.create(null);
+        for(const x of cur){ byKey[String(x.name).trim().toLowerCase() + '|' + x.kind] = x; }
+        for(const x of arr){
+          const k = String(x.name).trim().toLowerCase() + '|' + x.kind;
+          if(byKey[k]) Object.assign(byKey[k], x, { updatedAt: Date.now(), id: byKey[k].id || x.id });
+          else cur.unshift(x);
+        }
+        next = cur;
+      }
+      phase13State_.digestPresets = next.slice(0,50);
+      phase13SaveDigestPresets_();
+      addActivity(`Phase13 imported digest presets (${arr.length})`);
+      phase13RenderDigestPresetsPanel_();
+    }catch(err){
+      alert('Failed to import presets JSON.');
+      console.warn('Phase13 preset import failed', err);
+    }finally{
+      inp.value = '';
+    }
+  });
+  document.body.appendChild(inp);
+}
+
+function phase13RenderDigestPresetsPanel_(){
+  const box = document.querySelector('#phase13DigestPresetsPanel');
+  if(!box) return;
+  const presets = phase13LoadDigestPresets_().slice().sort((a,b)=> Number(b.updatedAt||0) - Number(a.updatedAt||0));
+  const p12cfg = (typeof phase12LoadCfg_ === 'function') ? phase12LoadCfg_() : { riskDigestAllProjects:true };
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Digest Scheduler Presets</div><div class="phase8-item__meta">Reusable export presets for risk/status digests</div></div>
+    <div class="phase13-note" style="margin-top:6px">These are run-on-demand presets (portable JSON), so your daily/weekly reporting steps stay consistent across browsers/devices.</div>
+    <div class="phase13-toolbar" style="margin-top:8px">
+      <input class="input" id="phase13PresetName" placeholder="Preset name (e.g. Morning Ops Risk MD)" />
+      <select class="select" id="phase13PresetKind"><option value="risk">Risk Digest (Phase12)</option><option value="status">Project Status (Phase10)</option></select>
+      <select class="select" id="phase13PresetFmt"><option value="MD">MD</option><option value="TXT">TXT</option></select>
+      <label class="phase13-check"><span>All Projects (risk only)</span><input type="checkbox" id="phase13PresetAll" ${p12cfg.riskDigestAllProjects ? 'checked' : ''}></label>
+      <button class="btn btn--ghost" type="button" id="phase13BtnSavePreset">Save Preset</button>
+      <button class="btn btn--ghost" type="button" id="phase13BtnExportPresets">Export JSON</button>
+      <button class="btn btn--ghost" type="button" id="phase13BtnImportPresets">Import JSON</button>
+    </div>
+    <div class="phase13-kv">
+      <div><b>Saved presets</b><span>${presets.length}</span></div>
+      <div><b>Active project</b><span>${escapeHtml(String((getActiveProject && getActiveProject()?.name) || '—'))}</span></div>
+      <div><b>Risk scope default</b><span>${p12cfg.riskDigestAllProjects ? 'all projects' : 'active project'}</span></div>
+      <div><b>Status</b><span>ready</span></div>
+    </div>
+    <div class="phase13-list" id="phase13DigestPresetList"></div>
+  `;
+  const list = box.querySelector('#phase13DigestPresetList');
+  if(!presets.length){
+    list.innerHTML = `<div class="phase8-empty">No digest presets yet. Save your common risk/status exports here.</div>`;
+  } else {
+    presets.slice(0,20).forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'phase13-row';
+      row.innerHTML = `
+        <div>
+          <div class="phase13-row__name">${escapeHtml(p.name)}</div>
+          <div class="phase13-row__meta">${p.kind === 'risk' ? 'Risk Digest' : 'Project Status'} • ${p.fmt} ${p.kind === 'risk' ? `• ${p.allProjects ? 'all projects' : 'active project'}` : '• active project'} • ${new Date(Number(p.updatedAt||Date.now())).toLocaleString()}</div>
+          ${p.note ? `<div class="phase13-note">${escapeHtml(p.note)}</div>` : ''}
+        </div>
+        <div class="phase13-toolbar">
+          <button class="btn btn--ghost" type="button" data-act="run">Run</button>
+          <button class="btn btn--ghost" type="button" data-act="dup">Duplicate</button>
+          <button class="btn btn--ghost" type="button" data-act="del">Delete</button>
+        </div>
+      `;
+      row.querySelector('[data-act="run"]')?.addEventListener('click', ()=>phase13RunDigestPreset_(p));
+      row.querySelector('[data-act="dup"]')?.addEventListener('click', ()=>{
+        const copy = phase13NormalizeDigestPreset_({ ...p, id: uid(), name: `${p.name} Copy`, createdAt:Date.now(), updatedAt:Date.now() });
+        phase13LoadDigestPresets_().unshift(copy); phase13SaveDigestPresets_(); addActivity(`Phase13 duplicated digest preset: ${p.name}`); phase13RenderDigestPresetsPanel_();
+      });
+      row.querySelector('[data-act="del"]')?.addEventListener('click', async ()=>{
+        const okDelete = await pmConfirmDialog_(`Delete digest preset "${p.name}"?`, { title:'Delete Digest Preset', okText:'Delete', danger:true });
+        if(!okDelete) return;
+        phase13State_.digestPresets = phase13LoadDigestPresets_().filter(x => String(x.id) !== String(p.id));
+        phase13SaveDigestPresets_(); addActivity(`Phase13 deleted digest preset: ${p.name}`); phase13RenderDigestPresetsPanel_();
+      });
+      list.appendChild(row);
+    });
+  }
+  box.querySelector('#phase13BtnSavePreset')?.addEventListener('click', () => {
+    const name = String(box.querySelector('#phase13PresetName')?.value || '').trim();
+    if(!name){ alert('Enter a preset name.'); return; }
+    const kind = String(box.querySelector('#phase13PresetKind')?.value || 'risk') === 'status' ? 'status' : 'risk';
+    const fmt = String(box.querySelector('#phase13PresetFmt')?.value || 'MD').toUpperCase() === 'TXT' ? 'TXT' : 'MD';
+    const allProjects = !!box.querySelector('#phase13PresetAll')?.checked;
+    const arr = phase13LoadDigestPresets_();
+    const key = name.toLowerCase() + '|' + kind;
+    const found = arr.find(x => (String(x.name||'').trim().toLowerCase() + '|' + x.kind) === key);
+    if(found){
+      found.kind = kind; found.fmt = fmt; found.allProjects = allProjects; found.updatedAt = Date.now();
+    } else {
+      arr.unshift(phase13NormalizeDigestPreset_({ id:uid(), name, kind, fmt, allProjects, createdAt:Date.now(), updatedAt:Date.now() }));
+    }
+    phase13SaveDigestPresets_();
+    addActivity(`Phase13 saved digest preset: ${name}`);
+    phase13RenderDigestPresetsPanel_();
+  });
+  box.querySelector('#phase13BtnExportPresets')?.addEventListener('click', () => {
+    const payload = { version:1, exportedAt:Date.now(), presets: phase13LoadDigestPresets_().map(phase13NormalizeDigestPreset_) };
+    downloadText(`phase13_digest_presets_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    addActivity(`Phase13 exported digest presets (${payload.presets.length})`);
+  });
+  box.querySelector('#phase13BtnImportPresets')?.addEventListener('click', () => document.querySelector('#phase13DigestPresetInput')?.click());
+}
+
+function phase13MentionRows_(){
+  if(typeof phase10LoadMentions_ !== 'function') return [];
+  let rows = [];
+  try{ rows = phase10LoadMentions_() || []; }catch{ rows = []; }
+  const ui = phase13LoadFollowupUi_();
+  const q = String(ui.query || '').trim().toLowerCase();
+  return rows.filter(Boolean).filter(x => {
+    const st = String(x.status || 'open');
+    if(ui.filter !== 'all' && st !== ui.filter) return false;
+    if(!q) return true;
+    const hay = [x.name, x.taskTitle, x.projectName, x.milestoneTitle, x.text].map(v => String(v||'').toLowerCase()).join('\n');
+    return hay.includes(q);
+  }).sort((a,b)=> Number(b.ts||0)-Number(a.ts||0));
+}
+
+function phase13SetMentionStatus_(id, status){
+  if(typeof phase10LoadMentions_ !== 'function') return false;
+  const arr = phase10LoadMentions_();
+  const item = arr.find(x => String(x.id) === String(id));
+  if(!item) return false;
+  item.status = String(status || 'open');
+  item.statusTs = Date.now();
+  if(typeof phase10SaveMentions_ === 'function') try{ phase10SaveMentions_(); }catch{}
+  addActivity(`Phase13 mention follow-up ${item.status}: @${item.name} • ${item.taskTitle}`);
+  try{ if(typeof phase10RenderMentionsPanel_ === 'function') phase10RenderMentionsPanel_(); }catch{}
+  try{ if(typeof phase8RenderNotificationsPanel_ === 'function') phase8RenderNotificationsPanel_(); }catch{}
+  phase13RenderFollowupStatesPanel_();
+  return true;
+}
+function phase13NudgeMentionFollowup_(id){
+  if(typeof phase10LoadMentions_ !== 'function') return false;
+  const arr = phase10LoadMentions_();
+  const fu = arr.find(x => String(x.id) === String(id));
+  if(!fu) return false;
+  const entry = (typeof phase10FindTaskEntryByIds_ === 'function')
+    ? phase10FindTaskEntryByIds_(fu.projectId, fu.milestoneId, fu.taskId)
+    : null;
+  if(entry && entry.t){
+    phase13EnsureTaskComments_(entry.t).push({ id: uid(), ts: Date.now(), author:'SYSTEM', text:`Phase13 mention follow-up nudge for @${fu.name}.` });
+  }
+  fu.status = 'nudged';
+  fu.statusTs = Date.now();
+  if(typeof phase10SaveMentions_ === 'function') try{ phase10SaveMentions_(); }catch{}
+  addActivity(`Phase13 nudged mention follow-up: @${fu.name} • ${fu.taskTitle}`);
+  try{ saveState({ skipHistory:true }); }catch{}
+  try{ if(typeof phase10RenderMentionsPanel_ === 'function') phase10RenderMentionsPanel_(); }catch{}
+  try{ if(typeof phase8RenderNotificationsPanel_ === 'function') phase8RenderNotificationsPanel_(); }catch{}
+  phase13RenderFollowupStatesPanel_();
+  return true;
+}
+
+function phase13RenderFollowupStatesPanel_(){
+  const box = document.querySelector('#phase13FollowupStatesPanel');
+  if(!box) return;
+  const ui = phase13LoadFollowupUi_();
+  const allRows = (typeof phase10LoadMentions_ === 'function') ? (phase10LoadMentions_() || []) : [];
+  const rows = phase13MentionRows_();
+  const counts = { open:0, nudged:0, ack:0, done:0 };
+  allRows.forEach(x => { const s = String(x.status || 'open'); counts[s] = (counts[s]||0)+1; });
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Assignee Follow-up States</div><div class="phase8-item__meta">Phase 10 mention follow-ups with nudged/ack lifecycle</div></div>
+    <div class="phase13-note" style="margin-top:6px">Adds lightweight tracking states on top of Phase 10 mentions: <b>open → nudged → ack → done</b> (with reopen when needed).</div>
+    <div class="phase13-toolbar" style="margin-top:8px">
+      <select class="select" id="phase13FuFilter">
+        <option value="all" ${ui.filter==='all'?'selected':''}>All</option>
+        <option value="open" ${ui.filter==='open'?'selected':''}>Open</option>
+        <option value="nudged" ${ui.filter==='nudged'?'selected':''}>Nudged</option>
+        <option value="ack" ${ui.filter==='ack'?'selected':''}>Ack</option>
+        <option value="done" ${ui.filter==='done'?'selected':''}>Done</option>
+      </select>
+      <input class="input" id="phase13FuQuery" placeholder="Search assignee / task / milestone" value="${escapeHtml(String(ui.query||''))}">
+      <button class="btn btn--ghost" type="button" id="phase13BtnFuRefresh">Refresh</button>
+    </div>
+    <div class="phase13-kv">
+      <div><b>Open</b><span>${counts.open||0}</span></div>
+      <div><b>Nudged</b><span>${counts.nudged||0}</span></div>
+      <div><b>Ack</b><span>${counts.ack||0}</span></div>
+      <div><b>Done</b><span>${counts.done||0}</span></div>
+    </div>
+    <div class="phase13-list" id="phase13FollowupList"></div>
+  `;
+  const list = box.querySelector('#phase13FollowupList');
+  if(typeof phase10LoadMentions_ !== 'function'){
+    list.innerHTML = `<div class="phase8-empty">Phase 10 mention tracking is not available in this build.</div>`;
+  } else if(!rows.length){
+    list.innerHTML = `<div class="phase8-empty">No follow-ups match the current filter.</div>`;
+  } else {
+    rows.slice(0,15).forEach(fu => {
+      const status = String(fu.status || 'open');
+      const row = document.createElement('div');
+      row.className = 'phase13-row';
+      row.innerHTML = `
+        <div>
+          <div class="phase13-row__name">@${escapeHtml(String(fu.name||''))} • ${escapeHtml(String(fu.taskTitle || 'Task'))}</div>
+          <div class="phase13-row__meta">${escapeHtml(String(fu.projectName || 'Project'))} • ${escapeHtml(String(fu.milestoneTitle || 'Milestone'))} • ${new Date(Number(fu.ts||Date.now())).toLocaleString()}</div>
+          <div class="phase13-note">${escapeHtml(String(fu.text || '').slice(0,160))}${String(fu.text||'').length>160?'…':''}</div>
+        </div>
+        <div class="phase13-toolbar">
+          <span class="phase13-tag ${status==='nudged'?'warn':(status==='ack'?'':'')}">${escapeHtml(status)}</span>
+          <button class="btn btn--ghost" type="button" data-act="openTask">Open</button>
+          <button class="btn btn--ghost" type="button" data-act="nudge">Nudge</button>
+          <button class="btn btn--ghost" type="button" data-act="ack">Ack</button>
+          <button class="btn btn--ghost" type="button" data-act="reopen">Reopen</button>
+          <button class="btn btn--ghost" type="button" data-act="done">Done</button>
+        </div>
+      `;
+      row.querySelector('[data-act="openTask"]')?.addEventListener('click', ()=>{ try{ if(typeof phase10OpenMentionFollowup_ === 'function') phase10OpenMentionFollowup_(fu.id); }catch{} });
+      row.querySelector('[data-act="nudge"]')?.addEventListener('click', ()=>phase13NudgeMentionFollowup_(fu.id));
+      row.querySelector('[data-act="ack"]')?.addEventListener('click', ()=>phase13SetMentionStatus_(fu.id, 'ack'));
+      row.querySelector('[data-act="reopen"]')?.addEventListener('click', ()=>phase13SetMentionStatus_(fu.id, 'open'));
+      row.querySelector('[data-act="done"]')?.addEventListener('click', ()=>phase13SetMentionStatus_(fu.id, 'done'));
+      list.appendChild(row);
+    });
+  }
+
+  box.querySelector('#phase13FuFilter')?.addEventListener('change', (e)=>{ ui.filter = String(e.target.value || 'open'); phase13SaveFollowupUi_(); phase13RenderFollowupStatesPanel_(); });
+  box.querySelector('#phase13FuQuery')?.addEventListener('change', (e)=>{ ui.query = String(e.target.value || ''); phase13SaveFollowupUi_(); phase13RenderFollowupStatesPanel_(); });
+  box.querySelector('#phase13BtnFuRefresh')?.addEventListener('click', ()=>phase13RenderFollowupStatesPanel_());
+}
+
+function phase13BulkTargets_(opts){
+  opts = opts || {};
+  const ctx = phase13ActiveMilestoneCtx_();
+  const m = ctx.m;
+  if(!m || !Array.isArray(m.tasks)) return { ...ctx, tasks:[] };
+  let tasks = m.tasks.filter(Boolean);
+  if(opts.openOnly) tasks = tasks.filter(t => !t.done);
+  return { ...ctx, tasks };
+}
+function phase13ShiftTaskDue_(t, days){
+  const n = Number(days || 0);
+  if(!Number.isFinite(n) || n === 0) return false;
+  const DAY = 86400000;
+  let due = Number(t?.dueAt || 0);
+  if(!(due > 0)){
+    const d = new Date();
+    d.setHours(17,0,0,0);
+    due = d.getTime();
+  }
+  t.dueAt = due + Math.round(n) * DAY;
+  return true;
+}
+function phase13RenderBulkMaintenancePanel_(){
+  const box = document.querySelector('#phase13BulkMaintenanceBox');
+  if(!box) return;
+  const cfg = phase13LoadCfg_();
+  const ctx = phase13BulkTargets_({ openOnly: !!cfg.bulkOpenOnly });
+  const p = ctx.p, m = ctx.m;
+  const tasks = ctx.tasks || [];
+  const counts = {
+    open: (m?.tasks || []).filter(t => !t.done).length,
+    selected: tasks.length,
+    noDue: tasks.filter(t => !(Number(t?.dueAt || 0) > 0)).length,
+    unassigned: tasks.filter(t => !String(t?.assignee || '').trim()).length,
+  };
+  box.innerHTML = `
+    <div class="phase8-item__top"><div class="phase8-item__title">Phase 13 Bulk Milestone Maintenance</div><div class="phase8-item__meta">${p ? escapeHtml(String(p.name||'')) : 'No project'} • ${m ? escapeHtml(String(m.title||'')) : 'No milestone'}</div></div>
+    <div class="phase13-note" style="margin-top:6px">Applies bulk changes to the <b>active milestone</b>. Use carefully. Actions update task metadata in-place and log activity.</div>
+    <div class="phase13-toolbar" style="margin-top:8px">
+      <label class="phase13-check"><span>Open tasks only</span><input type="checkbox" id="phase13BulkOpenOnly" ${cfg.bulkOpenOnly ? 'checked' : ''}></label>
+      <label class="phase13-check"><span>Shift due days</span><input class="input phase13-inlineNum" type="number" min="-365" max="365" id="phase13BulkShiftDays" value="${Number(cfg.bulkShiftDays||1)}"></label>
+      <button class="btn btn--ghost" type="button" id="phase13BtnBulkShift" ${m ? '' : 'disabled'}>Apply Due Shift</button>
+      <input class="input" id="phase13BulkAssignee" value="${escapeHtml(String(cfg.bulkAssignee||''))}" placeholder="Fallback / bulk assignee" />
+      <button class="btn btn--ghost" type="button" id="phase13BtnBulkAssign" ${m ? '' : 'disabled'}>Set Assignee</button>
+      <select class="select" id="phase13BulkSeverity">
+        <option value="normal" ${cfg.bulkSeverity==='normal'?'selected':''}>Normal</option>
+        <option value="high" ${cfg.bulkSeverity==='high'?'selected':''}>High</option>
+        <option value="blocker" ${cfg.bulkSeverity==='blocker'?'selected':''}>Blocker</option>
+      </select>
+      <button class="btn btn--ghost" type="button" id="phase13BtnBulkSeverity" ${m ? '' : 'disabled'}>Set Severity</button>
+      <button class="btn btn--ghost" type="button" id="phase13BtnBulkRefresh">Refresh</button>
+    </div>
+    <div class="phase13-kv">
+      <div><b>Open in milestone</b><span>${counts.open}</span></div>
+      <div><b>Current target set</b><span>${counts.selected}</span></div>
+      <div><b>No due date</b><span>${counts.noDue}</span></div>
+      <div><b>Unassigned</b><span>${counts.unassigned}</span></div>
+    </div>
+    <div class="phase13-pre">${escapeHtml(tasks.slice(0,8).map(t => `${t.done?'✅':'⬚'} ${t.title} • ${(t.severity||'normal').toUpperCase()}${t.assignee ? ' • ' + t.assignee : ''}${Number(t.dueAt||0) > 0 ? ' • ' + new Date(Number(t.dueAt)).toLocaleDateString() : ' • no due'}`).join('\n') || 'No tasks in target set.')}</div>
+  `;
+  const saveCfg = () => {
+    cfg.bulkOpenOnly = !!box.querySelector('#phase13BulkOpenOnly')?.checked;
+    cfg.bulkShiftDays = Number(box.querySelector('#phase13BulkShiftDays')?.value || cfg.bulkShiftDays || 0);
+    cfg.bulkAssignee = String(box.querySelector('#phase13BulkAssignee')?.value || '').trim();
+    cfg.bulkSeverity = String(box.querySelector('#phase13BulkSeverity')?.value || 'high');
+    phase13SaveCfg_();
+  };
+  ['#phase13BulkOpenOnly','#phase13BulkShiftDays','#phase13BulkAssignee','#phase13BulkSeverity'].forEach(sel => {
+    box.querySelector(sel)?.addEventListener('change', ()=>{ saveCfg(); phase13RenderBulkMaintenancePanel_(); });
+  });
+  box.querySelector('#phase13BtnBulkRefresh')?.addEventListener('click', ()=>phase13RenderBulkMaintenancePanel_());
+
+  box.querySelector('#phase13BtnBulkShift')?.addEventListener('click', () => {
+    saveCfg();
+    const c = phase13BulkTargets_({ openOnly: !!cfg.bulkOpenOnly });
+    if(!c.m){ alert('Select an active milestone first.'); return; }
+    const days = Number(cfg.bulkShiftDays || 0);
+    if(!Number.isFinite(days) || days === 0){ alert('Enter a non-zero shift day value.'); return; }
+    let changed = 0;
+    for(const t of (c.tasks || [])){ if(phase13ShiftTaskDue_(t, days)) changed++; }
+    if(changed){
+      addActivity(`Phase13 bulk due shift (${days}d): ${changed} task(s) • ${c.m.title}`);
+      saveState(); renderAll();
+    } else {
+      alert('No tasks were updated.');
+    }
+  });
+  box.querySelector('#phase13BtnBulkAssign')?.addEventListener('click', () => {
+    saveCfg();
+    const c = phase13BulkTargets_({ openOnly: !!cfg.bulkOpenOnly });
+    if(!c.m){ alert('Select an active milestone first.'); return; }
+    const who = String(cfg.bulkAssignee || '').trim();
+    if(!who){ alert('Enter an assignee name first.'); return; }
+    let changed = 0;
+    for(const t of (c.tasks || [])){
+      if(String(t.assignee || '') === who) continue;
+      t.assignee = who;
+      changed++;
+    }
+    if(changed){
+      addActivity(`Phase13 bulk assignee set: ${who} • ${changed} task(s) • ${c.m.title}`);
+      saveState(); renderAll();
+    } else {
+      alert('No tasks changed.');
+    }
+  });
+  box.querySelector('#phase13BtnBulkSeverity')?.addEventListener('click', () => {
+    saveCfg();
+    const c = phase13BulkTargets_({ openOnly: !!cfg.bulkOpenOnly });
+    if(!c.m){ alert('Select an active milestone first.'); return; }
+    const sev = (cfg.bulkSeverity === 'blocker' || cfg.bulkSeverity === 'high' || cfg.bulkSeverity === 'normal') ? cfg.bulkSeverity : 'high';
+    let changed = 0;
+    for(const t of (c.tasks || [])){
+      if(String(t.severity || 'normal') === sev) continue;
+      t.severity = sev;
+      changed++;
+    }
+    if(changed){
+      addActivity(`Phase13 bulk severity set: ${sev.toUpperCase()} • ${changed} task(s) • ${c.m.title}`);
+      saveState(); renderAll();
+    } else {
+      alert('No tasks changed.');
+    }
+  });
+}
+
+try{ initPhase13_(); }catch(err){ console.warn('Phase13 init failed', err); }
+
+
+
+/* ---------------------------
+   Phase 14 Approval Workflow + Export Center Cleanup (Additive Patch)
+   - Task / milestone approval states + change locks
+   - Review queue panels (dashboard / checklist / milestones)
+   - Approval audit trail (with rollback notes)
+   - Topbar export cleanup: single Export button + Export tab
+---------------------------- */
+var PHASE14_APPROVAL_AUDIT_KEY = 'stark_pm_phase14_approval_audit_v1';
+var PHASE14_EXPORT_UI_KEY = 'stark_pm_phase14_export_ui_v1';
+var phase14State_ = {
+  inited:false,
+  audit:null,
+  exportUi:null,
+};
+
+function initPhase14_(){
+  if(phase14State_.inited) return;
+  phase14State_.inited = true;
+  try{ phase14EnsureStyles_(); }catch(err){ console.warn('Phase14 styles failed', err); }
+  try{ phase14PatchSanitizers_(); }catch(err){ console.warn('Phase14 sanitizer patch failed', err); }
+  try{ phase14WrapCore_(); }catch(err){ console.warn('Phase14 core wrap failed', err); }
+  try{ phase14InjectExportTab_(); }catch(err){ console.warn('Phase14 export tab inject failed', err); }
+  try{ phase14EnhanceTopbarExport_(); }catch(err){ console.warn('Phase14 topbar cleanup failed', err); }
+  try{ phase14BindGuardrails_(); }catch(err){ console.warn('Phase14 guardrails bind failed', err); }
+  try{ phase14PostRenderDashboard_(); }catch{}
+  try{ phase14PostRenderMilestones_(); }catch{}
+  try{ phase14PostRenderChecklist_(); }catch{}
+  try{ phase14RenderExportCenter_(); }catch{}
+}
+
+function phase14EnsureStyles_(){
+  if(document.querySelector('#phase14Styles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase14Styles';
+  st.textContent = `
+    .phase14-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase14-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase14-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:10px}
+    .phase14-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase14-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .phase14-toolbar .btn{padding:6px 10px}
+    .phase14-note{font-size:11px;opacity:.78;line-height:1.35}
+    .phase14-kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+    .phase14-kv>div{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase14-kv b{display:block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;opacity:.72;margin-bottom:4px}
+    .phase14-kv span{font-size:14px;font-weight:800}
+    .phase14-list{display:grid;gap:8px;margin-top:8px}
+    .phase14-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase14-row__name{font-size:12px;font-weight:700;line-height:1.25;word-break:break-word}
+    .phase14-row__meta{font-size:11px;opacity:.76;line-height:1.3;margin-top:2px}
+    .phase14-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
+    .phase14-tag{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:2px 7px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+    .phase14-tag.review{border-color:rgba(255,191,92,.28);color:#ffd8a6}
+    .phase14-tag.approved{border-color:rgba(79,209,197,.28);color:#b8fff6}
+    .phase14-tag.locked{border-color:rgba(255,110,110,.32);color:#ffd0d0}
+    .phase14-tag.draft{border-color:rgba(255,255,255,.12);opacity:.9}
+    .phase14-inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .phase14-pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.35;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.14);margin-top:8px;max-height:260px;overflow:auto}
+    .phase14-taskLocked{outline:1px solid rgba(255,110,110,.2);box-shadow:inset 0 0 0 1px rgba(255,110,110,.06)}
+    .phase14-taskLocked .task__title{opacity:.95}
+    .phase14-badge{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 6px;font-size:10px;letter-spacing:.05em;text-transform:uppercase;border:1px solid rgba(255,255,255,.1)}
+    .phase14-badge.review{border-color:rgba(255,191,92,.28);color:#ffd8a6}
+    .phase14-badge.approved{border-color:rgba(79,209,197,.28);color:#b8fff6}
+    .phase14-badge.locked{border-color:rgba(255,110,110,.32);color:#ffd0d0}
+    .phase14-exportLayout{display:grid;grid-template-columns:1.05fr .95fr;gap:10px}
+    .phase14-exportCard{border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(255,255,255,.015);padding:12px}
+    .phase14-exportCard h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;opacity:.88}
+    .phase14-fields{display:grid;gap:8px}
+    .phase14-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .phase14-helpList{display:grid;gap:6px}
+    .phase14-helpItem{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase14-helpItem b{display:block;font-size:11px;margin-bottom:2px}
+    .phase14-helpItem span{font-size:11px;opacity:.76;line-height:1.3}
+    .phase14-hidden{display:none !important}
+    .phase14-lockHint{font-size:11px;color:#ffd0d0;opacity:.9;margin-top:6px}
+    .phase14-topbar-export{font-weight:700}
+    @media (max-width: 980px){ .phase14-grid,.phase14-exportLayout{grid-template-columns:1fr} .phase14-kv{grid-template-columns:1fr 1fr} .phase14-fields .row{grid-template-columns:1fr} }
+    @media (max-width: 640px){ .phase14-kv{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase14PatchSanitizers_(){
+  if(typeof sanitizeTask === 'function' && !sanitizeTask._phase14WrappedApproval){
+    const _orig = sanitizeTask;
+    sanitizeTask = function(t){
+      const out = _orig(t);
+      out.approval = phase14NormalizeApproval_(t && t.approval, 'task');
+      return out;
+    };
+    sanitizeTask._phase14WrappedApproval = true;
+  }
+  if(typeof sanitizeMilestone === 'function' && !sanitizeMilestone._phase14WrappedApproval){
+    const _orig = sanitizeMilestone;
+    sanitizeMilestone = function(m){
+      const out = _orig(m);
+      out.approval = phase14NormalizeApproval_(m && m.approval, 'milestone');
+      return out;
+    };
+    sanitizeMilestone._phase14WrappedApproval = true;
+  }
+  if(typeof mkTask === 'function' && !mkTask._phase14WrappedApproval){
+    const _orig = mkTask;
+    mkTask = function(){
+      const t = _orig.apply(this, arguments);
+      t.approval = phase14NormalizeApproval_(t.approval, 'task');
+      return t;
+    };
+    mkTask._phase14WrappedApproval = true;
+  }
+  if(typeof mkMilestone === 'function' && !mkMilestone._phase14WrappedApproval){
+    const _orig = mkMilestone;
+    mkMilestone = function(){
+      const m = _orig.apply(this, arguments);
+      m.approval = phase14NormalizeApproval_(m.approval, 'milestone');
+      return m;
+    };
+    mkMilestone._phase14WrappedApproval = true;
+  }
+}
+
+function phase14WrapCore_(){
+  if(typeof renderDashboard === 'function' && !renderDashboard._phase14Wrapped){
+    const _orig = renderDashboard;
+    renderDashboard = function(){
+      const r = _orig.apply(this, arguments);
+      try{ phase14PostRenderDashboard_(); }catch(err){ console.warn('Phase14 dashboard render failed', err); }
+      return r;
+    };
+    renderDashboard._phase14Wrapped = true;
+  }
+  if(typeof renderMilestones === 'function' && !renderMilestones._phase14Wrapped){
+    const _orig = renderMilestones;
+    renderMilestones = function(){
+      const r = _orig.apply(this, arguments);
+      try{ phase14PostRenderMilestones_(); }catch(err){ console.warn('Phase14 milestones render failed', err); }
+      return r;
+    };
+    renderMilestones._phase14Wrapped = true;
+  }
+  if(typeof renderChecklist === 'function' && !renderChecklist._phase14Wrapped){
+    const _orig = renderChecklist;
+    renderChecklist = function(){
+      const r = _orig.apply(this, arguments);
+      try{ phase14PostRenderChecklist_(); }catch(err){ console.warn('Phase14 checklist render failed', err); }
+      return r;
+    };
+    renderChecklist._phase14Wrapped = true;
+  }
+  if(typeof renderAll === 'function' && !renderAll._phase14Wrapped){
+    const _orig = renderAll;
+    renderAll = function(){
+      const r = _orig.apply(this, arguments);
+      try{ phase14RenderExportCenter_(); }catch{}
+      return r;
+    };
+    renderAll._phase14Wrapped = true;
+  }
+}
+
+function phase14NormalizeApproval_(v, kind){
+  const s = String(v && v.state || 'draft').toLowerCase();
+  return {
+    kind: kind || 'item',
+    state: (s === 'review' || s === 'approved') ? s : 'draft',
+    locked: !!(v && v.locked),
+    requestedAt: Number(v && v.requestedAt || 0),
+    approvedAt: Number(v && v.approvedAt || 0),
+    updatedAt: Number(v && v.updatedAt || 0),
+    reviewer: String(v && v.reviewer || ''),
+    note: String(v && v.note || '').slice(0, 280),
+  };
+}
+function phase14TaskApproval_(t){
+  if(!t || typeof t !== 'object') return phase14NormalizeApproval_(null, 'task');
+  t.approval = phase14NormalizeApproval_(t.approval, 'task');
+  return t.approval;
+}
+function phase14MilestoneApproval_(m){
+  if(!m || typeof m !== 'object') return phase14NormalizeApproval_(null, 'milestone');
+  m.approval = phase14NormalizeApproval_(m.approval, 'milestone');
+  return m.approval;
+}
+function phase14ApprovalLabel_(a){
+  const s = String(a && a.state || 'draft');
+  if(s === 'review') return 'IN REVIEW';
+  if(s === 'approved') return 'APPROVED';
+  return 'DRAFT';
+}
+function phase14ApprovalClass_(a){
+  const s = String(a && a.state || 'draft');
+  return (s === 'review' || s === 'approved') ? s : 'draft';
+}
+function phase14IsMilestoneLocked_(m){
+  return !!phase14MilestoneApproval_(m).locked;
+}
+function phase14IsTaskLocked_(t){
+  return !!phase14TaskApproval_(t).locked;
+}
+function phase14ActiveMilestoneLocked_(){
+  const p = getActiveProject && getActiveProject();
+  const m = p ? getActiveMilestone(p) : null;
+  return !!(m && phase14IsMilestoneLocked_(m));
+}
+
+function phase14LoadAudit_(){
+  if(Array.isArray(phase14State_.audit)) return phase14State_.audit;
+  let arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(PHASE14_APPROVAL_AUDIT_KEY) || '[]') || []; }catch{ arr = []; }
+  phase14State_.audit = Array.isArray(arr) ? arr.filter(Boolean).map(x => ({
+    id: String(x && x.id || uid()),
+    ts: Number(x && x.ts || Date.now()),
+    scope: String(x && x.scope || 'item'),
+    action: String(x && x.action || 'update'),
+    targetType: String(x && x.targetType || 'item'),
+    targetId: String(x && x.targetId || ''),
+    projectId: String(x && x.projectId || ''),
+    moduleId: String(x && x.moduleId || ''),
+    milestoneId: String(x && x.milestoneId || ''),
+    taskId: String(x && x.taskId || ''),
+    title: String(x && x.title || ''),
+    state: String(x && x.state || ''),
+    locked: !!(x && x.locked),
+    note: String(x && x.note || '').slice(0, 280),
+  })) : [];
+  return phase14State_.audit;
+}
+function phase14SaveAudit_(){ try{ localStorage.setItem(PHASE14_APPROVAL_AUDIT_KEY, JSON.stringify((phase14LoadAudit_()||[]).slice(0,1500))); }catch{} }
+function phase14PushAudit_(payload){
+  const rows = phase14LoadAudit_();
+  rows.unshift({ id: uid(), ts: Date.now(), ...payload });
+  if(rows.length > 1500) rows.length = 1500;
+  phase14SaveAudit_();
+}
+function phase14AuditMessage_(payload){
+  const bits = ['Phase14'];
+  bits.push(payload.targetType === 'task' ? 'task' : 'milestone');
+  bits.push(payload.action);
+  if(payload.title) bits.push(`: ${payload.title}`);
+  if(payload.state) bits.push(`[${String(payload.state).toUpperCase()}]`);
+  if(payload.locked) bits.push('[LOCKED]');
+  if(payload.note) bits.push(`(${payload.note})`);
+  return bits.join(' ');
+}
+function phase14LogApprovalAction_(ctx, payload){
+  const row = {
+    scope:'approval',
+    targetType: payload.targetType,
+    action: payload.action,
+    targetId: String(payload.targetId || ''),
+    projectId: String(ctx && ctx.p && ctx.p.id || ''),
+    moduleId: String(ctx && ctx.mod && ctx.mod.id || ''),
+    milestoneId: String(ctx && ctx.ms && ctx.ms.id || ''),
+    taskId: String(ctx && ctx.t && ctx.t.id || ''),
+    title: String(payload.title || ''),
+    state: String(payload.state || ''),
+    locked: !!payload.locked,
+    note: String(payload.note || ''),
+  };
+  phase14PushAudit_(row);
+  try{ addActivity(phase14AuditMessage_(row)); }catch{}
+}
+
+function phase14TaskCtxInActive_(taskId){
+  const p = getActiveProject && getActiveProject();
+  const mod = p ? getActiveModule(p) : null;
+  const ms = p ? getActiveMilestone(p) : null;
+  if(!ms || !taskId) return null;
+  const t = (ms.tasks || []).find(x => x && String(x.id) === String(taskId));
+  if(!t) return null;
+  return { p, mod, ms, t };
+}
+function phase14CurrentMilestoneCtx_(){
+  const p = getActiveProject && getActiveProject();
+  const mod = p ? getActiveModule(p) : null;
+  const ms = p ? getActiveMilestone(p) : null;
+  if(!ms) return null;
+  return { p, mod, ms };
+}
+
+async function phase14SetTaskApprovalState_(taskId, nextState){
+  const ctx = phase14TaskCtxInActive_(taskId);
+  if(!ctx) return;
+  const { p, mod, ms, t } = ctx;
+  if(phase14IsMilestoneLocked_(ms) && nextState !== 'draft' && nextState !== 'review' && nextState !== 'approved') return;
+  const a = phase14TaskApproval_(t);
+  const prevState = a.state;
+  const targetState = (nextState === 'approved' || nextState === 'review') ? nextState : 'draft';
+  let rollbackNote = '';
+  if(prevState === 'approved' && targetState !== 'approved'){
+    const raw = await pmPromptDialog_(`Rollback note for task "${t.title}" (optional, recommended):`, a.note || '', { title:'Rollback Task Approval', placeholder:'Optional rollback note' });
+    if(raw == null) return;
+    rollbackNote = String(raw || '').trim().slice(0, 280);
+  }
+  if(prevState === targetState && !rollbackNote) return;
+  a.state = targetState;
+  if(targetState === 'review' && !a.requestedAt) a.requestedAt = Date.now();
+  if(targetState === 'approved'){
+    a.approvedAt = Date.now();
+    a.reviewer = 'ME';
+  }
+  a.updatedAt = Date.now();
+  if(rollbackNote) a.note = rollbackNote;
+  phase14LogApprovalAction_({ p, mod, ms, t }, {
+    targetType:'task',
+    action: (targetState === 'review' ? 'request_review' : targetState === 'approved' ? 'approve' : 'rework'),
+    targetId: t.id,
+    title: t.title,
+    state: targetState,
+    locked: !!a.locked,
+    note: rollbackNote || a.note || ''
+  });
+  saveState();
+  renderAll();
+}
+function phase14ToggleTaskLock_(taskId){
+  const ctx = phase14TaskCtxInActive_(taskId);
+  if(!ctx) return;
+  const { p, mod, ms, t } = ctx;
+  const a = phase14TaskApproval_(t);
+  a.locked = !a.locked;
+  a.updatedAt = Date.now();
+  if(a.locked && a.state === 'draft') a.state = 'review';
+  phase14LogApprovalAction_({ p, mod, ms, t }, {
+    targetType:'task', action: a.locked ? 'lock' : 'unlock', targetId:t.id, title:t.title, state:a.state, locked:a.locked
+  });
+  saveState();
+  renderAll();
+}
+async function phase14SetMilestoneApprovalState_(nextState){
+  const ctx = phase14CurrentMilestoneCtx_();
+  if(!ctx) return;
+  const { p, mod, ms } = ctx;
+  const a = phase14MilestoneApproval_(ms);
+  const prevState = a.state;
+  const targetState = (nextState === 'approved' || nextState === 'review') ? nextState : 'draft';
+  let rollbackNote = '';
+  if(prevState === 'approved' && targetState !== 'approved'){
+    const raw = await pmPromptDialog_(`Rollback note for milestone "${ms.title}" (optional, recommended):`, a.note || '', { title:'Rollback Milestone Approval', placeholder:'Optional rollback note' });
+    if(raw == null) return;
+    rollbackNote = String(raw || '').trim().slice(0, 280);
+  }
+  if(prevState === targetState && !rollbackNote) return;
+  a.state = targetState;
+  if(targetState === 'review' && !a.requestedAt) a.requestedAt = Date.now();
+  if(targetState === 'approved'){
+    a.approvedAt = Date.now();
+    a.reviewer = 'ME';
+  }
+  a.updatedAt = Date.now();
+  if(rollbackNote) a.note = rollbackNote;
+  phase14LogApprovalAction_({ p, mod, ms }, {
+    targetType:'milestone',
+    action:(targetState === 'review' ? 'request_review' : targetState === 'approved' ? 'approve' : 'rework'),
+    targetId: ms.id,
+    title: ms.title,
+    state: targetState,
+    locked: !!a.locked,
+    note: rollbackNote || a.note || ''
+  });
+  saveState();
+  renderAll();
+}
+function phase14ToggleMilestoneLock_(){
+  const ctx = phase14CurrentMilestoneCtx_();
+  if(!ctx) return;
+  const { p, mod, ms } = ctx;
+  const a = phase14MilestoneApproval_(ms);
+  a.locked = !a.locked;
+  a.updatedAt = Date.now();
+  if(a.locked && a.state === 'draft') a.state = 'review';
+  phase14LogApprovalAction_({ p, mod, ms }, {
+    targetType:'milestone', action:a.locked ? 'lock' : 'unlock', targetId:ms.id, title:ms.title, state:a.state, locked:a.locked
+  });
+  saveState();
+  renderAll();
+}
+
+function phase14CollectApprovalQueue_(opts){
+  opts = opts || {};
+  const onlyActive = !!opts.onlyActiveProject;
+  const active = getActiveProject && getActiveProject();
+  const out = { taskDraft:0, taskReview:0, taskApproved:0, taskLocked:0, milestoneDraft:0, milestoneReview:0, milestoneApproved:0, milestoneLocked:0, taskRows:[], milestoneRows:[] };
+  for(const p of (state.projects || [])){
+    if(onlyActive && active && String(p.id) !== String(active.id)) continue;
+    for(const mod of (p.modules || [])){
+      for(const ms of (mod.milestones || [])){
+        const ma = phase14MilestoneApproval_(ms);
+        if(ma.state === 'review') out.milestoneReview++; else if(ma.state === 'approved') out.milestoneApproved++; else out.milestoneDraft++;
+        if(ma.locked) out.milestoneLocked++;
+        if(ma.state === 'review' || ma.locked){
+          out.milestoneRows.push({ p, mod, ms, a:ma });
+        }
+        for(const t of (ms.tasks || [])){
+          const ta = phase14TaskApproval_(t);
+          if(ta.state === 'review') out.taskReview++; else if(ta.state === 'approved') out.taskApproved++; else out.taskDraft++;
+          if(ta.locked) out.taskLocked++;
+          if(ta.state === 'review' || ta.locked){
+            out.taskRows.push({ p, mod, ms, t, a:ta });
+          }
+        }
+      }
+    }
+  }
+  out.taskRows.sort((a,b) => (Number(b.a.updatedAt||0)-Number(a.a.updatedAt||0)) || String(a.t.title||'').localeCompare(String(b.t.title||'')));
+  out.milestoneRows.sort((a,b) => (Number(b.a.updatedAt||0)-Number(a.a.updatedAt||0)) || String(a.ms.title||'').localeCompare(String(b.ms.title||'')));
+  return out;
+}
+
+function phase14PostRenderDashboard_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  let box = document.querySelector('#phase14ApprovalQueuePanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase14ApprovalQueuePanel';
+    box.className = 'phase14-box';
+    const host = document.querySelector('#phase13DashboardHost') || document.querySelector('#phase12DashboardHost') || document.querySelector('#phase11DashboardHost') || document.querySelector('#phase10DashboardHost') || document.querySelector('#phase8DashboardHost');
+    if(host && host.parentElement) host.parentElement.insertBefore(box, host);
+    else tab.appendChild(box);
+  }
+  const q = phase14CollectApprovalQueue_({ onlyActiveProject:false });
+  const active = getActiveProject && getActiveProject();
+  const recentAudit = phase14LoadAudit_().slice(0, 6);
+  box.innerHTML = `
+    <div class="phase14-title">Phase 14 Approval Workflow & Review Queue</div>
+    <div class="phase14-grid">
+      <div class="phase14-card">
+        <div class="phase14-toolbar">
+          <button class="btn btn--ghost" type="button" id="phase14BtnOpenChecklistReview">Open Checklist Review</button>
+          <button class="btn btn--ghost" type="button" id="phase14BtnOpenMilestoneApproval">Open Milestone Approval</button>
+          <button class="btn btn--ghost" type="button" id="phase14BtnOpenExportApprovalAudit">Export Approval Audit</button>
+        </div>
+        <div class="phase14-kv">
+          <div><b>Task Review</b><span>${q.taskReview}</span></div>
+          <div><b>Task Locked</b><span>${q.taskLocked}</span></div>
+          <div><b>MS Review</b><span>${q.milestoneReview}</span></div>
+          <div><b>MS Locked</b><span>${q.milestoneLocked}</span></div>
+        </div>
+        <div class="phase14-note" style="margin-top:8px">Use task/milestone approvals to control when execution items can be changed. Locked items are protected by manual checklist/milestone guardrails. ${active ? `Active project: <b>${escapeHtml(String(active.name||''))}</b>.` : 'Select a project to review approvals.'}</div>
+        <div class="phase14-list" id="phase14DashQueueList"></div>
+      </div>
+      <div class="phase14-card">
+        <div class="phase14-title" style="margin-bottom:6px">Approval Audit (Recent)</div>
+        <div class="phase14-pre" id="phase14DashAuditPreview"></div>
+      </div>
+    </div>
+  `;
+  const qList = box.querySelector('#phase14DashQueueList');
+  const rows = q.taskRows.slice(0, 6).concat(q.milestoneRows.slice(0, 4));
+  if(!rows.length){
+    qList.innerHTML = `<div class="phase14-helpItem"><b>No pending review items</b><span>Queue fills when tasks/milestones are set to In Review or locked.</span></div>`;
+  } else {
+    for(const row of rows){
+      const isTask = !!row.t;
+      const title = isTask ? String(row.t.title||'') : String(row.ms.title||'');
+      const meta = isTask
+        ? `${row.p?.name || '—'} • ${row.mod?.name || '—'} • ${row.ms?.title || '—'}`
+        : `${row.p?.name || '—'} • ${row.mod?.name || '—'}`;
+      const a = row.a;
+      const wrap = document.createElement('div');
+      wrap.className = 'phase14-row';
+      wrap.innerHTML = `
+        <div>
+          <div class="phase14-row__name">${isTask ? 'Task' : 'Milestone'} • ${escapeHtml(title)}</div>
+          <div class="phase14-row__meta">${escapeHtml(meta)}</div>
+        </div>
+        <div class="phase14-tags">
+          <span class="phase14-tag ${phase14ApprovalClass_(a)}">${escapeHtml(phase14ApprovalLabel_(a))}</span>
+          ${a.locked ? '<span class="phase14-tag locked">LOCKED</span>' : ''}
+          <button class="btn btn--ghost" type="button" data-act="open">Open</button>
+        </div>
+      `;
+      wrap.querySelector('[data-act="open"]')?.addEventListener('click', () => {
+        try{
+          setActiveProject(row.p.id);
+          setActiveModule(row.mod.id);
+          setActiveMilestone(row.ms.id);
+          if(isTask){
+            switchTab('checklist');
+            setTimeout(() => {
+              const el = document.querySelector(`#taskList .task[data-task-id="${CSS.escape(String(row.t.id))}"]`);
+              el?.scrollIntoView({ behavior:'smooth', block:'center' });
+              el?.classList.add('is-selected'); setTimeout(()=>el?.classList.remove('is-selected'), 900);
+            }, 60);
+          } else {
+            switchTab('milestones');
+          }
+        }catch{}
+      });
+      qList.appendChild(wrap);
+    }
+  }
+  box.querySelector('#phase14BtnOpenChecklistReview')?.addEventListener('click', () => { switchTab('checklist'); setTimeout(()=>document.querySelector('#phase14ChecklistApprovalPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase14BtnOpenMilestoneApproval')?.addEventListener('click', () => { switchTab('milestones'); setTimeout(()=>document.querySelector('#phase14MilestoneApprovalPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase14BtnOpenExportApprovalAudit')?.addEventListener('click', () => { phase14OpenExportTab_({ type:'approval_audit', fmt:'JSON' }); });
+  const previewLines = recentAudit.length ? recentAudit.map(a => {
+    const when = new Date(Number(a.ts||Date.now())).toLocaleString();
+    const bits = [`[${when}]`, a.targetType || 'item', a.action || 'update'];
+    if(a.title) bits.push(a.title);
+    if(a.state) bits.push(`(${String(a.state).toUpperCase()})`);
+    if(a.locked) bits.push('[LOCKED]');
+    if(a.note) bits.push(`- ${a.note}`);
+    return bits.join(' ');
+  }) : ['No approval audit entries yet.'];
+  box.querySelector('#phase14DashAuditPreview').textContent = previewLines.join('\n');
+}
+
+function phase14PostRenderMilestones_(){
+  const tab = document.querySelector('#tab-milestones');
+  if(!tab) return;
+  phase14DecorateMilestoneList_();
+
+  const cards = Array.from(tab.querySelectorAll('.card'));
+  const detailCard = cards[1] || cards[cards.length-1];
+  if(!detailCard) return;
+  let box = document.querySelector('#phase14MilestoneApprovalPanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase14MilestoneApprovalPanel';
+    box.className = 'phase14-box';
+    detailCard.appendChild(box);
+  }
+  const ctx = phase14CurrentMilestoneCtx_();
+  if(!ctx){
+    box.innerHTML = `
+      <div class="phase14-title">Milestone Approval</div>
+      <div class="phase14-note">Select a milestone to manage approval state and change lock.</div>
+    `;
+    return;
+  }
+  const { p, mod, ms } = ctx;
+  const a = phase14MilestoneApproval_(ms);
+  const taskTotal = Array.isArray(ms.tasks) ? ms.tasks.length : 0;
+  const tReview = (ms.tasks||[]).filter(t => phase14TaskApproval_(t).state === 'review').length;
+  const tApproved = (ms.tasks||[]).filter(t => phase14TaskApproval_(t).state === 'approved').length;
+  const tLocked = (ms.tasks||[]).filter(t => phase14TaskApproval_(t).locked).length;
+  const canApprove = taskTotal === 0 || (tReview + tApproved) > 0;
+
+  box.innerHTML = `
+    <div class="phase14-title">Milestone Approval</div>
+    <div class="phase14-toolbar">
+      <span class="phase14-tag ${phase14ApprovalClass_(a)}">${escapeHtml(phase14ApprovalLabel_(a))}</span>
+      ${a.locked ? '<span class="phase14-tag locked">LOCKED</span>' : ''}
+      <button class="btn btn--ghost" type="button" id="phase14BtnMsReview">Request Review</button>
+      <button class="btn btn--ghost" type="button" id="phase14BtnMsApprove" ${canApprove ? '' : 'disabled'}>Approve</button>
+      <button class="btn btn--ghost" type="button" id="phase14BtnMsRework">Back to Draft</button>
+      <button class="btn btn--ghost" type="button" id="phase14BtnMsLockToggle">${a.locked ? 'Unlock Changes' : 'Lock Changes'}</button>
+    </div>
+    <div class="phase14-kv">
+      <div><b>Tasks</b><span>${taskTotal}</span></div>
+      <div><b>Task Review</b><span>${tReview}</span></div>
+      <div><b>Task Approved</b><span>${tApproved}</span></div>
+      <div><b>Task Locked</b><span>${tLocked}</span></div>
+    </div>
+    <div class="phase14-note" style="margin-top:8px">${escapeHtml(String(p?.name||''))} • ${escapeHtml(String(mod?.name||''))} • ${escapeHtml(String(ms?.title||''))}</div>
+    <div class="phase14-note">When the milestone is locked, manual edits on the milestone form and checklist mutation buttons are blocked until unlocked.</div>
+    ${phase14IsMilestoneLocked_(ms) ? '<div class="phase14-lockHint">Milestone lock is active. Save/Delete milestone and checklist mutate actions are guarded.</div>' : ''}
+  `;
+  box.querySelector('#phase14BtnMsReview')?.addEventListener('click', ()=>phase14SetMilestoneApprovalState_('review'));
+  box.querySelector('#phase14BtnMsApprove')?.addEventListener('click', ()=>phase14SetMilestoneApprovalState_('approved'));
+  box.querySelector('#phase14BtnMsRework')?.addEventListener('click', ()=>phase14SetMilestoneApprovalState_('draft'));
+  box.querySelector('#phase14BtnMsLockToggle')?.addEventListener('click', phase14ToggleMilestoneLock_);
+
+  try{
+    const saveBtn = document.querySelector('#btnSaveMilestone');
+    const delBtn = document.querySelector('#btnDeleteMilestone');
+    if(saveBtn){ saveBtn.disabled = !!a.locked; saveBtn.title = a.locked ? 'Milestone changes are locked (Phase 14)' : ''; }
+    if(delBtn){ delBtn.disabled = !!a.locked; delBtn.title = a.locked ? 'Milestone changes are locked (Phase 14)' : ''; }
+  }catch{}
+}
+
+function phase14DecorateMilestoneList_(){
+  const p = getActiveProject && getActiveProject();
+  const mod = p ? getActiveModule(p) : null;
+  const items = Array.from(document.querySelectorAll('#milestoneList .item'));
+  const rows = Array.isArray(mod && mod.milestones) ? mod.milestones : [];
+  items.forEach((el, idx) => {
+    const ms = rows[idx];
+    if(!ms) return;
+    const a = phase14MilestoneApproval_(ms);
+    let sub = el.querySelector('.item__sub');
+    if(!sub) return;
+    let badge = sub.querySelector('.phase14-msBadgeState');
+    if(!badge){ badge = document.createElement('span'); badge.className = `badge phase14-msBadgeState`; sub.appendChild(badge); }
+    badge.textContent = phase14ApprovalLabel_(a);
+    badge.className = `badge phase14-msBadgeState phase14-badge ${phase14ApprovalClass_(a)}`;
+    let lockBadge = sub.querySelector('.phase14-msBadgeLock');
+    if(a.locked){
+      if(!lockBadge){ lockBadge = document.createElement('span'); lockBadge.className = 'badge phase14-msBadgeLock'; sub.appendChild(lockBadge); }
+      lockBadge.textContent = 'LOCKED';
+      lockBadge.className = 'badge phase14-msBadgeLock phase14-badge locked';
+      el.classList.add('phase14-taskLocked');
+    } else {
+      if(lockBadge) lockBadge.remove();
+      el.classList.remove('phase14-taskLocked');
+    }
+  });
+}
+
+function phase14PostRenderChecklist_(){
+  const tab = document.querySelector('#tab-checklist');
+  if(!tab) return;
+  phase14DecorateTaskCards_();
+
+  const cards = Array.from(tab.querySelectorAll('.card'));
+  const tasksCard = cards[1] || cards[cards.length-1];
+  if(!tasksCard) return;
+  let box = document.querySelector('#phase14ChecklistApprovalPanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase14ChecklistApprovalPanel';
+    box.className = 'phase14-box';
+    tasksCard.appendChild(box);
+  }
+  const p = getActiveProject && getActiveProject();
+  const mod = p ? getActiveModule(p) : null;
+  const ms = p ? getActiveMilestone(p) : null;
+  if(!ms){
+    box.innerHTML = `<div class="phase14-title">Task Review Queue</div><div class="phase14-note">Select a milestone to review tasks and apply approval / lock states.</div>`;
+    return;
+  }
+  const ma = phase14MilestoneApproval_(ms);
+  const tasks = Array.isArray(ms.tasks) ? ms.tasks : [];
+  const counts = { draft:0, review:0, approved:0, locked:0 };
+  for(const t of tasks){ const a = phase14TaskApproval_(t); counts[a.state] = (counts[a.state]||0)+1; if(a.locked) counts.locked++; }
+
+  box.innerHTML = `
+    <div class="phase14-title">Task Review Queue</div>
+    <div class="phase14-toolbar">
+      <span class="phase14-tag ${phase14ApprovalClass_(ma)}">Milestone ${escapeHtml(phase14ApprovalLabel_(ma))}</span>
+      ${ma.locked ? '<span class="phase14-tag locked">MILESTONE LOCKED</span>' : ''}
+      <button class="btn btn--ghost" type="button" id="phase14BtnTaskQueuePending">Pending Only</button>
+      <button class="btn btn--ghost" type="button" id="phase14BtnTaskQueueAll">All Tasks</button>
+      <button class="btn btn--ghost" type="button" id="phase14BtnTaskQueueApproveReview">Approve In Review</button>
+    </div>
+    <div class="phase14-kv">
+      <div><b>Draft</b><span>${counts.draft||0}</span></div>
+      <div><b>Review</b><span>${counts.review||0}</span></div>
+      <div><b>Approved</b><span>${counts.approved||0}</span></div>
+      <div><b>Locked</b><span>${counts.locked||0}</span></div>
+    </div>
+    <div class="phase14-note" style="margin-top:8px">${escapeHtml(String(p?.name||''))} • ${escapeHtml(String(mod?.name||''))} • ${escapeHtml(String(ms?.title||''))}</div>
+    <div class="phase14-list" id="phase14ChecklistTaskQueueList"></div>
+  `;
+  const list = box.querySelector('#phase14ChecklistTaskQueueList');
+  let mode = box.dataset.mode || 'pending';
+  const renderRows = () => {
+    box.dataset.mode = mode;
+    list.innerHTML = '';
+    let rows = tasks.slice();
+    if(mode === 'pending') rows = rows.filter(t => { const a = phase14TaskApproval_(t); return a.state === 'review' || a.locked; });
+    rows.sort((a,b) => {
+      const aa = phase14TaskApproval_(a), bb = phase14TaskApproval_(b);
+      const rank = x => x.state === 'review' ? 0 : x.locked ? 1 : x.state === 'approved' ? 2 : 3;
+      return rank(aa) - rank(bb) || String(a.title||'').localeCompare(String(b.title||''));
+    });
+    if(!rows.length){
+      list.innerHTML = `<div class="phase14-helpItem"><b>No ${mode === 'pending' ? 'pending review/locked' : ''} tasks</b><span>Use the buttons below each task row to move it into review or approve it.</span></div>`;
+      return;
+    }
+    rows.slice(0, 80).forEach(t => {
+      const a = phase14TaskApproval_(t);
+      const row = document.createElement('div');
+      row.className = 'phase14-row';
+      row.innerHTML = `
+        <div>
+          <div class="phase14-row__name">${escapeHtml(String(t.title||''))}</div>
+          <div class="phase14-row__meta">${t.done ? 'Done' : 'Open'} • ${escapeHtml(String(t.severity||'normal').toUpperCase())}${t.assignee ? ' • ' + escapeHtml(String(t.assignee)) : ''}${a.note ? ' • note: ' + escapeHtml(String(a.note)).slice(0,80) : ''}</div>
+        </div>
+        <div class="phase14-tags">
+          <span class="phase14-tag ${phase14ApprovalClass_(a)}">${escapeHtml(phase14ApprovalLabel_(a))}</span>
+          ${a.locked ? '<span class="phase14-tag locked">LOCKED</span>' : ''}
+          <button class="btn btn--ghost" type="button" data-act="focus">Focus</button>
+          <button class="btn btn--ghost" type="button" data-act="review">Review</button>
+          <button class="btn btn--ghost" type="button" data-act="approve">Approve</button>
+          <button class="btn btn--ghost" type="button" data-act="rework">Draft</button>
+          <button class="btn btn--ghost" type="button" data-act="lock">${a.locked ? 'Unlock' : 'Lock'}</button>
+        </div>
+      `;
+      row.querySelector('[data-act="focus"]')?.addEventListener('click', () => {
+        const el = document.querySelector(`#taskList .task[data-task-id="${CSS.escape(String(t.id))}"]`);
+        el?.scrollIntoView({ behavior:'smooth', block:'center' });
+        el?.classList.add('is-selected'); setTimeout(()=>el?.classList.remove('is-selected'), 900);
+      });
+      row.querySelector('[data-act="review"]')?.addEventListener('click', ()=>phase14SetTaskApprovalState_(t.id, 'review'));
+      row.querySelector('[data-act="approve"]')?.addEventListener('click', ()=>phase14SetTaskApprovalState_(t.id, 'approved'));
+      row.querySelector('[data-act="rework"]')?.addEventListener('click', ()=>phase14SetTaskApprovalState_(t.id, 'draft'));
+      row.querySelector('[data-act="lock"]')?.addEventListener('click', ()=>phase14ToggleTaskLock_(t.id));
+      list.appendChild(row);
+    });
+  };
+  renderRows();
+  box.querySelector('#phase14BtnTaskQueuePending')?.addEventListener('click', ()=>{ mode='pending'; renderRows(); });
+  box.querySelector('#phase14BtnTaskQueueAll')?.addEventListener('click', ()=>{ mode='all'; renderRows(); });
+  box.querySelector('#phase14BtnTaskQueueApproveReview')?.addEventListener('click', async () => {
+    if(phase14IsMilestoneLocked_(ms)) { alert('Milestone is locked. Unlock it first if you need to change approvals.'); return; }
+    const ids = tasks.filter(t => phase14TaskApproval_(t).state === 'review').map(t => t.id);
+    if(!ids.length){ alert('No tasks currently in review.'); return; }
+    const okApprove = await pmConfirmDialog_(`Approve ${ids.length} task(s) currently in review?`, { title:'Approve Review Queue', okText:'Approve' });
+    if(!okApprove) return;
+    for(const id of ids){
+      const tt = (ms.tasks || []).find(x => x && x.id === id); if(!tt) continue;
+      const a = phase14TaskApproval_(tt);
+      a.state = 'approved'; a.approvedAt = Date.now(); a.reviewer = 'ME'; a.updatedAt = Date.now();
+      phase14LogApprovalAction_({ p, mod, ms, t:tt }, { targetType:'task', action:'approve', targetId:tt.id, title:tt.title, state:a.state, locked:a.locked });
+    }
+    saveState();
+    renderAll();
+  });
+
+  // disable common checklist mutation buttons when milestone is locked
+  const locked = phase14IsMilestoneLocked_(ms);
+  ['btnAddTask','btnSortTasks','btnClearDone'].forEach(id => {
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.disabled = locked;
+    btn.title = locked ? 'Milestone changes are locked (Phase 14)' : '';
+  });
+}
+
+function phase14DecorateTaskCards_(){
+  const p = getActiveProject && getActiveProject();
+  const ms = p ? getActiveMilestone(p) : null;
+  const cards = Array.from(document.querySelectorAll('#taskList .task'));
+  if(!ms){ cards.forEach(c => c.classList.remove('phase14-taskLocked')); return; }
+  for(const card of cards){
+    const tid = String(card.dataset.taskId || '');
+    const t = (ms.tasks || []).find(x => x && String(x.id) === tid);
+    if(!t) continue;
+    const a = phase14TaskApproval_(t);
+    const meta = card.querySelector('.task__meta');
+    if(meta){
+      let stateBadge = meta.querySelector('.phase14-taskBadgeState');
+      if(!stateBadge){ stateBadge = document.createElement('span'); stateBadge.className = 'badge phase14-taskBadgeState'; meta.appendChild(stateBadge); }
+      stateBadge.textContent = phase14ApprovalLabel_(a);
+      stateBadge.className = `badge phase14-taskBadgeState phase14-badge ${phase14ApprovalClass_(a)}`;
+      let lockBadge = meta.querySelector('.phase14-taskBadgeLock');
+      if(a.locked){
+        if(!lockBadge){ lockBadge = document.createElement('span'); lockBadge.className = 'badge phase14-taskBadgeLock'; meta.appendChild(lockBadge); }
+        lockBadge.textContent = 'LOCKED';
+        lockBadge.className = 'badge phase14-taskBadgeLock phase14-badge locked';
+      } else if(lockBadge){ lockBadge.remove(); }
+    }
+    card.classList.toggle('phase14-taskLocked', !!a.locked);
+  }
+}
+
+function phase14BindGuardrails_(){
+  if(document._phase14GuardrailsBound) return;
+  document._phase14GuardrailsBound = true;
+
+  const block = (e, msg) => {
+    try{ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation && e.stopImmediatePropagation(); }catch{}
+    alert(msg || 'This item is locked by Phase 14 approval controls. Unlock it first.');
+  };
+
+  document.addEventListener('click', function(e){
+    const t = e.target;
+    if(!t || !(t instanceof Element)) return;
+
+    // topbar export cleanup shortcut
+    const exportBtn = t.closest('#phase14BtnExportCenter');
+    if(exportBtn){
+      e.preventDefault();
+      phase14OpenExportTab_();
+      return;
+    }
+
+    // Milestone-level guards
+    const saveMs = t.closest('#btnSaveMilestone');
+    const delMs = t.closest('#btnDeleteMilestone');
+    if((saveMs || delMs) && phase14ActiveMilestoneLocked_()){
+      return block(e, 'Milestone changes are locked. Use Phase 14 Milestone Approval panel to unlock first.');
+    }
+    const mutBtn = t.closest('#btnAddTask, #btnSortTasks, #btnClearDone, #phase9BtnAssignSet, #phase9BtnAssignClear, #phase9BtnAssignRebalance');
+    if(mutBtn && phase14ActiveMilestoneLocked_()){
+      return block(e, 'Checklist changes are locked because the active milestone is locked (Phase 14).');
+    }
+
+    // Task-level guard on task card interactive controls (allow comments thread button)
+    const taskCard = t.closest('#taskList .task');
+    if(taskCard){
+      const tid = String(taskCard.dataset.taskId || '');
+      const ctx = phase14TaskCtxInActive_(tid);
+      if(!ctx) return;
+      if(phase14IsMilestoneLocked_(ctx.ms)){
+        const interactive = t.closest('button,input,select,textarea,label,.iconbtn');
+        const allowComment = !!t.closest('[data-act="phase9Comment"]');
+        if(interactive && !allowComment){
+          return block(e, 'This milestone is locked. Unlock milestone changes from the Phase 14 Milestone Approval panel.');
+        }
+      }
+      const ta = phase14TaskApproval_(ctx.t);
+      if(ta.locked){
+        const interactive = t.closest('button,input,select,textarea,label,.iconbtn');
+        const allowComment = !!t.closest('[data-act="phase9Comment"]');
+        if(interactive && !allowComment){
+          return block(e, 'This task is locked by approval controls. Unlock the task in the Phase 14 Task Review Queue first.');
+        }
+      }
+    }
+  }, true);
+
+  document.addEventListener('change', function(e){
+    const t = e.target;
+    if(!t || !(t instanceof Element)) return;
+    const taskCard = t.closest('#taskList .task');
+    if(!taskCard) return;
+    const tid = String(taskCard.dataset.taskId || '');
+    const ctx = phase14TaskCtxInActive_(tid);
+    if(!ctx) return;
+    if(phase14IsMilestoneLocked_(ctx.ms)){
+      return block(e, 'This milestone is locked. Unlock milestone changes to edit tasks.');
+    }
+    if(phase14IsTaskLocked_(ctx.t)){
+      return block(e, 'This task is locked by approval controls.');
+    }
+  }, true);
+}
+
+function phase14InjectExportTab_(){
+  const sidebarNav = document.querySelector('.nav');
+  const importTab = document.querySelector('#tab-import');
+  if(!sidebarNav || !importTab) return;
+
+  let navBtn = sidebarNav.querySelector('.nav__item[data-tab="export"]');
+  if(!navBtn){
+    const importBtn = sidebarNav.querySelector('.nav__item[data-tab="import"]');
+    navBtn = document.createElement('button');
+    navBtn.className = 'nav__item';
+    navBtn.type = 'button';
+    navBtn.dataset.tab = 'export';
+    navBtn.textContent = 'Export';
+    if(importBtn && importBtn.parentElement) importBtn.parentElement.insertBefore(navBtn, importBtn);
+    else sidebarNav.appendChild(navBtn);
+  }
+
+  let panel = document.querySelector('#tab-export');
+  if(!panel){
+    panel = document.createElement('section');
+    panel.className = 'tab';
+    panel.id = 'tab-export';
+    panel.dataset.tab = 'export';
+    panel.innerHTML = `
+      <div class="tab__header">
+        <div class="tab__title">Export Center</div>
+        <div class="tab__subtitle">Choose what to export, format, and scope from one place (replaces scattered export buttons in the top bar).</div>
+      </div>
+      <div id="phase14ExportCenterRoot"></div>
+    `;
+    importTab.parentElement.insertBefore(panel, importTab);
+  }
+
+  if(ui && Array.isArray(ui.tabs) && !ui.tabs.some(x => x && x.dataset && x.dataset.tab === 'export')) ui.tabs.push(navBtn);
+  if(ui && Array.isArray(ui.tabPanels) && !ui.tabPanels.some(x => x && x.dataset && x.dataset.tab === 'export')) ui.tabPanels.push(panel);
+
+  if(!navBtn._phase14Bound){
+    navBtn.addEventListener('click', () => {
+      switchTab('export');
+      setTimeout(() => phase14RenderExportCenter_(), 20);
+    });
+    navBtn._phase14Bound = true;
+  }
+}
+
+function phase14EnhanceTopbarExport_(){
+  const topbarRight = document.querySelector('#topbarRight') || document.querySelector('.topbar__right') || document.querySelector('.topbar-right');
+  if(!topbarRight) return;
+
+  // Hide scattered export-related buttons and route users to Export Center.
+  ['#btnExportJson','#btnExportMd','#btnExportTxt','#phase7BtnExportV2','#phase9BtnAuditExport','#phase10BtnStatusReport','#phase12BtnRiskDigest']
+    .forEach(sel => { const el = document.querySelector(sel); if(el){ el.style.display = 'none'; el.dataset.phase14HiddenExport = '1'; } });
+
+  let btn = document.querySelector('#phase14BtnExportCenter');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.id = 'phase14BtnExportCenter';
+    btn.className = 'btn phase14-topbar-export';
+    btn.type = 'button';
+    btn.textContent = 'Export';
+    btn.title = 'Open Export Center';
+    const before = document.querySelector('#phase7BtnImportV2') || topbarRight.firstElementChild || null;
+    topbarRight.insertBefore(btn, before);
+  }
+}
+
+function phase14LoadExportUi_(){
+  if(phase14State_.exportUi) return phase14State_.exportUi;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE14_EXPORT_UI_KEY) || 'null'); }catch{}
+  const x = (raw && typeof raw === 'object') ? raw : {};
+  phase14State_.exportUi = {
+    type: ['state_json','project_doc','portable_v2','status_report','risk_digest','audit_activity','approval_audit','dashboard_views','digest_presets'].includes(String(x.type||'')) ? String(x.type) : 'project_doc',
+    fmt: ['JSON','MD','TXT'].includes(String(x.fmt||'').toUpperCase()) ? String(x.fmt).toUpperCase() : 'MD',
+    allProjects: !!x.allProjects,
+    includeApprovalAudit: x.includeApprovalAudit !== false,
+  };
+  return phase14State_.exportUi;
+}
+function phase14SaveExportUi_(){ try{ localStorage.setItem(PHASE14_EXPORT_UI_KEY, JSON.stringify(phase14LoadExportUi_())); }catch{} }
+
+function phase14OpenExportTab_(opts){
+  const uiCfg = phase14LoadExportUi_();
+  if(opts && opts.type) uiCfg.type = opts.type;
+  if(opts && opts.fmt) uiCfg.fmt = String(opts.fmt).toUpperCase();
+  phase14SaveExportUi_();
+  switchTab('export');
+  setTimeout(() => {
+    phase14RenderExportCenter_();
+    const typeSel = document.querySelector('#phase14ExportType');
+    const fmtSel = document.querySelector('#phase14ExportFmt');
+    if(typeSel && opts && opts.type){ typeSel.value = uiCfg.type; typeSel.dispatchEvent(new Event('change')); }
+    if(fmtSel && opts && opts.fmt){ fmtSel.value = uiCfg.fmt; fmtSel.dispatchEvent(new Event('change')); }
+    document.querySelector('#phase14BtnRunExport')?.focus();
+  }, 30);
+}
+
+function phase14RenderExportCenter_(){
+  const root = document.querySelector('#phase14ExportCenterRoot');
+  if(!root) return;
+  const cfg = phase14LoadExportUi_();
+  const p = getActiveProject && getActiveProject();
+  const approvalAuditCount = (phase14LoadAudit_() || []).length;
+  const dashViewsCount = (typeof phase11LoadDashViews_ === 'function') ? (phase11LoadDashViews_() || []).length : 0;
+  const digestPresetCount = (typeof phase13LoadDigestPresets_ === 'function') ? (phase13LoadDigestPresets_() || []).length : 0;
+
+  root.innerHTML = `
+    <div class="phase14-exportLayout">
+      <div class="phase14-exportCard">
+        <h4>Export Request</h4>
+        <div class="phase14-fields">
+          <label class="field">
+            <span class="field__label">What do you want to export?</span>
+            <select class="select" id="phase14ExportType">
+              <option value="project_doc">Active Project Document (.md / .txt)</option>
+              <option value="state_json">Full App State JSON</option>
+              <option value="portable_v2">Portable V2 Bundle JSON (Phase 7)</option>
+              <option value="status_report">Status Report (Phase 10)</option>
+              <option value="risk_digest">Risk Digest (Phase 12)</option>
+              <option value="audit_activity">Activity Audit Trail (Phase 9)</option>
+              <option value="approval_audit">Approval Audit Trail (Phase 14)</option>
+              <option value="dashboard_views">Dashboard Views JSON (Phase 11/12)</option>
+              <option value="digest_presets">Digest Presets JSON (Phase 13)</option>
+            </select>
+          </label>
+          <div class="row">
+            <label class="field">
+              <span class="field__label">Format</span>
+              <select class="select" id="phase14ExportFmt">
+                <option value="MD">MD</option>
+                <option value="TXT">TXT</option>
+                <option value="JSON">JSON</option>
+              </select>
+            </label>
+            <label class="field" id="phase14ExportScopeWrap">
+              <span class="field__label">Scope</span>
+              <select class="select" id="phase14ExportScope">
+                <option value="active">Active Project</option>
+                <option value="all">All Projects</option>
+              </select>
+            </label>
+          </div>
+          <label class="field" id="phase14ExportApprovalAuditToggleWrap">
+            <span class="field__label">Include extra approval audit file (JSON/TXT only on supportable types)</span>
+            <select class="select" id="phase14ExportApprovalAuditToggle">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+          <div class="phase14-helpItem" id="phase14ExportPreviewCard">
+            <b>Export details</b>
+            <span id="phase14ExportDetailsText">Choose an export type.</span>
+          </div>
+          <div class="phase14-toolbar">
+            <button class="btn" type="button" id="phase14BtnRunExport">Run Export</button>
+            <button class="btn btn--ghost" type="button" id="phase14BtnOpenImportTab">Open Import Tab</button>
+            <button class="btn btn--ghost" type="button" id="phase14BtnExportRefresh">Refresh Summary</button>
+          </div>
+        </div>
+      </div>
+      <div class="phase14-exportCard">
+        <h4>Available Sources</h4>
+        <div class="phase14-helpList">
+          <div class="phase14-helpItem"><b>Active Project</b><span>${p ? escapeHtml(String(p.name||'')) : 'No active project selected.'}</span></div>
+          <div class="phase14-helpItem"><b>Approval Audit Entries</b><span>${approvalAuditCount} entries (Phase 14 local approval audit trail)</span></div>
+          <div class="phase14-helpItem"><b>Dashboard Views</b><span>${dashViewsCount} saved views (Phase 11 / portable export supported)</span></div>
+          <div class="phase14-helpItem"><b>Digest Presets</b><span>${digestPresetCount} saved digest presets (Phase 13)</span></div>
+          <div class="phase14-helpItem"><b>Topbar Cleanup</b><span>Legacy export buttons are hidden and routed through this tab. Import buttons remain available.</span></div>
+        </div>
+        <div class="phase14-pre" id="phase14ExportExamplePreview"></div>
+      </div>
+    </div>
+  `;
+
+  const typeSel = root.querySelector('#phase14ExportType');
+  const fmtSel = root.querySelector('#phase14ExportFmt');
+  const scopeSel = root.querySelector('#phase14ExportScope');
+  const scopeWrap = root.querySelector('#phase14ExportScopeWrap');
+  const auditSel = root.querySelector('#phase14ExportApprovalAuditToggle');
+  const auditWrap = root.querySelector('#phase14ExportApprovalAuditToggleWrap');
+  const detailsText = root.querySelector('#phase14ExportDetailsText');
+  const exPreview = root.querySelector('#phase14ExportExamplePreview');
+
+  typeSel.value = cfg.type;
+  fmtSel.value = cfg.fmt;
+  scopeSel.value = cfg.allProjects ? 'all' : 'active';
+  auditSel.value = cfg.includeApprovalAudit ? 'yes' : 'no';
+
+  const applyTypeRules = () => {
+    const type = typeSel.value;
+    let fmts = ['JSON'];
+    let allowAllScope = false;
+    let desc = '';
+    if(type === 'project_doc'){
+      fmts = ['MD','TXT'];
+      allowAllScope = false;
+      desc = 'Exports the active project in your PM template-friendly document format. Best for sharing plans or archiving milestone/task structure.';
+    } else if(type === 'state_json'){
+      fmts = ['JSON'];
+      allowAllScope = true;
+      desc = 'Full app database snapshot (all projects + UI state). Use for backups or full restore preview.';
+    } else if(type === 'portable_v2'){
+      fmts = ['JSON'];
+      allowAllScope = true;
+      desc = 'Phase 7 portable V2 export bundle with metadata and compatibility helpers.';
+    } else if(type === 'status_report'){
+      fmts = ['MD','TXT'];
+      allowAllScope = false;
+      desc = 'Phase 10 active-project status report with risk summary + top priority tasks.';
+    } else if(type === 'risk_digest'){
+      fmts = ['MD','TXT'];
+      allowAllScope = true;
+      desc = 'Phase 12 risk digest generated from project health, SLA aging, and notification signals.';
+    } else if(type === 'audit_activity'){
+      fmts = ['TXT','JSON'];
+      allowAllScope = true;
+      desc = 'Phase 9 activity audit trail export (filtered state is used if Phase 8 audit search is active).';
+    } else if(type === 'approval_audit'){
+      fmts = ['JSON','TXT'];
+      allowAllScope = true;
+      desc = 'Phase 14 approval audit trail (task/milestone approval actions, locks, rollback notes).';
+    } else if(type === 'dashboard_views'){
+      fmts = ['JSON'];
+      allowAllScope = true;
+      desc = 'Portable backup of saved dashboard views (Phase 11 / Phase 12 import-export compatibility).';
+    } else if(type === 'digest_presets'){
+      fmts = ['JSON'];
+      allowAllScope = true;
+      desc = 'Phase 13 digest presets backup (status/risk export presets).';
+    }
+
+    // rebuild format options safely
+    const oldFmt = fmtSel.value;
+    fmtSel.innerHTML = fmts.map(x => `<option value="${x}">${x}</option>`).join('');
+    fmtSel.value = fmts.includes(oldFmt) ? oldFmt : fmts[0];
+    scopeWrap.classList.toggle('phase14-hidden', !allowAllScope && type !== 'risk_digest' && type !== 'state_json' && type !== 'portable_v2' && type !== 'audit_activity' && type !== 'approval_audit' && type !== 'dashboard_views' && type !== 'digest_presets');
+    if(!allowAllScope) scopeSel.value = 'active';
+    const allowExtraApproval = ['project_doc','status_report','risk_digest','audit_activity'].includes(type);
+    auditWrap.classList.toggle('phase14-hidden', !allowExtraApproval);
+    if(!allowExtraApproval) auditSel.value = 'no';
+
+    const scopeLabel = (scopeSel.value === 'all') ? 'All Projects' : 'Active Project';
+    detailsText.textContent = `${desc} Selected format: ${fmtSel.value}. Scope: ${scopeLabel}.`;
+
+    const previewLines = [];
+    previewLines.push(`Type: ${type}`);
+    previewLines.push(`Format: ${fmtSel.value}`);
+    previewLines.push(`Scope: ${scopeSel.value}`);
+    if(p) previewLines.push(`Active Project: ${p.name}`);
+    if(type === 'approval_audit') previewLines.push(`Approval Audit Entries: ${approvalAuditCount}`);
+    if(type === 'dashboard_views') previewLines.push(`Dashboard Views: ${dashViewsCount}`);
+    if(type === 'digest_presets') previewLines.push(`Digest Presets: ${digestPresetCount}`);
+    if(auditSel.value === 'yes') previewLines.push(`Extra approval audit sidecar: YES`);
+    previewLines.push('');
+    previewLines.push('Tip: Use the topbar Export button to jump back here anytime.');
+    exPreview.textContent = previewLines.join('\n');
+
+    cfg.type = type;
+    cfg.fmt = fmtSel.value;
+    cfg.allProjects = (scopeSel.value === 'all');
+    cfg.includeApprovalAudit = (auditSel.value === 'yes');
+    phase14SaveExportUi_();
+  };
+
+  typeSel.addEventListener('change', applyTypeRules);
+  fmtSel.addEventListener('change', applyTypeRules);
+  scopeSel.addEventListener('change', applyTypeRules);
+  auditSel.addEventListener('change', applyTypeRules);
+  applyTypeRules();
+
+  root.querySelector('#phase14BtnOpenImportTab')?.addEventListener('click', () => switchTab('import'));
+  root.querySelector('#phase14BtnExportRefresh')?.addEventListener('click', () => phase14RenderExportCenter_());
+  root.querySelector('#phase14BtnRunExport')?.addEventListener('click', () => phase14RunExportCenterRequest_());
+}
+
+function phase14SafeFile_(name){
+  return String(name || 'export').replace(/[^a-z0-9\-_]+/ig,'_').replace(/^_+|_+$/g,'').slice(0,80) || 'export';
+}
+function phase14DateStamp_(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const da = String(d.getDate()).padStart(2,'0');
+  const h = String(d.getHours()).padStart(2,'0');
+  const mi = String(d.getMinutes()).padStart(2,'0');
+  return `${y}${m}${da}_${h}${mi}`;
+}
+function phase14ApprovalAuditText_(){
+  const rows = phase14LoadAudit_();
+  const L = [
+    'PHASE 14 APPROVAL AUDIT EXPORT',
+    `Exported: ${new Date().toLocaleString()}`,
+    `Rows: ${rows.length}`,
+    ''
+  ];
+  rows.forEach((r, i) => {
+    const when = new Date(Number(r.ts||Date.now())).toLocaleString();
+    const parts = [`${i+1}. [${when}]`, `${r.targetType||'item'}`, `${r.action||'update'}`];
+    if(r.title) parts.push(r.title);
+    if(r.state) parts.push(`[${String(r.state).toUpperCase()}]`);
+    if(r.locked) parts.push('[LOCKED]');
+    if(r.note) parts.push(`note=${r.note}`);
+    L.push(parts.join(' '));
+  });
+  return L.join('\n');
+}
+function phase14ExportApprovalAudit_(fmt){
+  const kind = String(fmt || 'JSON').toUpperCase() === 'TXT' ? 'TXT' : 'JSON';
+  const stamp = phase14DateStamp_();
+  const rows = phase14LoadAudit_();
+  if(kind === 'JSON'){
+    const payload = { version:1, exportedAt:Date.now(), type:'phase14_approval_audit', rows };
+    downloadText(`phase14_approval_audit_${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  } else {
+    downloadText(`phase14_approval_audit_${stamp}.txt`, phase14ApprovalAuditText_(), 'text/plain');
+  }
+  try{ addActivity(`Phase14 exported approval audit (${kind})`); }catch{}
+  try{ saveState({ skipHistory:true }); }catch{}
+}
+
+function phase14RunExportCenterRequest_(){
+  const root = document.querySelector('#phase14ExportCenterRoot');
+  if(!root) return;
+  const type = String(root.querySelector('#phase14ExportType')?.value || 'project_doc');
+  const fmt = String(root.querySelector('#phase14ExportFmt')?.value || 'MD').toUpperCase();
+  const allProjects = String(root.querySelector('#phase14ExportScope')?.value || 'active') === 'all';
+  const includeApprovalAudit = String(root.querySelector('#phase14ExportApprovalAuditToggle')?.value || 'no') === 'yes';
+  const cfg = phase14LoadExportUi_();
+  cfg.type = type; cfg.fmt = fmt; cfg.allProjects = allProjects; cfg.includeApprovalAudit = includeApprovalAudit; phase14SaveExportUi_();
+
+  try{
+    if(type === 'project_doc'){
+      const p = getActiveProject && getActiveProject();
+      if(!p){ alert('Select an active project first.'); return; }
+      const safe = phase14SafeFile_(p.name || 'project');
+      if(fmt === 'TXT'){
+        if(typeof serializeProjectToText_ !== 'function') throw new Error('Project TXT export helper not found');
+        downloadText(`${safe}.txt`, serializeProjectToText_(p), 'text/plain');
+      } else {
+        if(typeof serializeProjectToMarkdown_ !== 'function') throw new Error('Project MD export helper not found');
+        downloadText(`${safe}.md`, serializeProjectToMarkdown_(p), 'text/markdown');
+      }
+      addActivity(`Phase14 export center exported project doc (${fmt}): ${p.name}`);
+      if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
+      return;
+    }
+
+    if(type === 'state_json'){
+      const payload = (typeof sanitizeState === 'function') ? sanitizeState(state) : state;
+      downloadText(`stark_pm_export_${phase14DateStamp_()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      addActivity('Phase14 export center exported full state JSON');
+      return;
+    }
+
+    if(type === 'portable_v2'){
+      if(typeof phase7ExportV2Bundle_ === 'function'){
+        phase7ExportV2Bundle_();
+        addActivity('Phase14 export center triggered portable V2 export');
+      } else {
+        alert('Phase 7 portable V2 export is not available in this build.');
+      }
+      return;
+    }
+
+    if(type === 'status_report'){
+      const p = getActiveProject && getActiveProject();
+      if(!p){ alert('Select an active project first.'); return; }
+      if(typeof phase10BuildStatusReport_ !== 'function'){ alert('Phase 10 status report generator is not available.'); return; }
+      const kind = (fmt === 'TXT') ? 'txt' : 'md';
+      const txt = phase10BuildStatusReport_(kind);
+      if(!txt){ alert('Could not build status report.'); return; }
+      const safe = phase14SafeFile_(String(p.name||'project'));
+      downloadText(`${safe}_status_report_${phase14DateStamp()}.${kind === 'md' ? 'md' : 'txt'}`, txt, kind === 'md' ? 'text/markdown' : 'text/plain');
+      addActivity(`Phase14 export center exported status report (${fmt}): ${p.name}`);
+      if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
+      return;
+    }
+
+    if(type === 'risk_digest'){
+      if(typeof phase12BuildRiskDigestData_ !== 'function' || typeof phase12BuildRiskDigestText_ !== 'function'){
+        alert('Phase 12 risk digest helpers are not available.'); return;
+      }
+      const d = phase12BuildRiskDigestData_({ allProjects });
+      const kind = (fmt === 'TXT') ? 'TXT' : 'MD';
+      const txt = phase12BuildRiskDigestText_(kind, d);
+      const scope = allProjects ? 'all' : 'active';
+      downloadText(`risk_digest_${scope}_${phase14DateStamp()}.${kind === 'MD' ? 'md' : 'txt'}`, txt, kind === 'MD' ? 'text/markdown' : 'text/plain');
+      addActivity(`Phase14 export center exported risk digest (${kind}) [${scope}]`);
+      if(includeApprovalAudit) phase14ExportApprovalAudit_(kind === 'TXT' ? 'TXT' : 'JSON');
+      return;
+    }
+
+    if(type === 'audit_activity'){
+      if(typeof phase9ExportAuditTrail_ === 'function'){
+        phase9ExportAuditTrail_(fmt === 'JSON' ? 'json' : 'txt');
+      } else {
+        const rows = Array.isArray(state?.activity) ? state.activity : [];
+        if(fmt === 'JSON') downloadText(`audit_trail_${phase14DateStamp()}.json`, JSON.stringify({ rows }, null, 2), 'application/json');
+        else downloadText(`audit_trail_${phase14DateStamp()}.txt`, rows.map(a => `[${new Date(Number(a.ts||Date.now())).toLocaleString()}] ${String(a.msg||'')}`).join('\n'), 'text/plain');
+        addActivity(`Phase14 export center exported audit trail fallback (${fmt})`);
+      }
+      if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
+      return;
+    }
+
+    if(type === 'approval_audit'){
+      phase14ExportApprovalAudit_(fmt);
+      return;
+    }
+
+    if(type === 'dashboard_views'){
+      let views = [];
+      try{ views = (typeof phase11LoadDashViews_ === 'function') ? (phase11LoadDashViews_() || []) : []; }catch{ views = []; }
+      const payload = { version:1, exportedAt:Date.now(), type:'phase11_dashboard_views', views };
+      downloadText(`dashboard_views_${phase14DateStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      addActivity(`Phase14 export center exported dashboard views (${views.length})`);
+      return;
+    }
+
+    if(type === 'digest_presets'){
+      let presets = [];
+      try{ presets = (typeof phase13LoadDigestPresets_ === 'function') ? (phase13LoadDigestPresets_() || []) : []; }catch{ presets = []; }
+      const payload = { version:1, exportedAt:Date.now(), presets };
+      downloadText(`phase13_digest_presets_${phase14DateStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      addActivity(`Phase14 export center exported digest presets (${presets.length})`);
+      return;
+    }
+  } catch(err){
+    console.warn('Phase14 export center failed', err);
+    alert(`Export failed: ${err && err.message ? err.message : err}`);
+    return;
+  } finally {
+    try{ saveState({ skipHistory:true }); }catch{}
+    try{ phase14RenderExportCenter_(); }catch{}
+  }
+}
+
+// alias typo-safe helper (used by export builder)
+function phase14DateStamp(){ return phase14DateStamp_(); }
+
+try{ initPhase14_(); }catch(err){ console.warn('Phase14 init failed', err); }
+
+
+
+/* ---------------------------
+   Phase 15 RBAC-lite Approval Profiles (Additive Patch)
+   - Role profiles: Owner / Reviewer / Executor
+   - Approval permissions for task/milestone approval + lock actions
+   - Per-milestone approval policy (require review before approve, role gates)
+   - Lock override reason (required on unlock)
+---------------------------- */
+var PHASE15_RBAC_CFG_KEY = 'stark_pm_phase15_rbac_cfg_v1';
+var PHASE15_SESSION_KEY = 'stark_pm_phase15_session_v1';
+var phase15State_ = { inited:false, cfg:null, session:null };
+
+function initPhase15_(){
+  if(phase15State_.inited) return;
+  phase15State_.inited = true;
+  try{ phase15EnsureStyles_(); }catch(err){ console.warn('Phase15 styles failed', err); }
+  try{ phase15PatchSanitizers_(); }catch(err){ console.warn('Phase15 sanitizer patch failed', err); }
+  try{ phase15WrapCore_(); }catch(err){ console.warn('Phase15 core wrap failed', err); }
+  try{ phase15WrapApprovalActions_(); }catch(err){ console.warn('Phase15 approval wrap failed', err); }
+  try{ phase15EnsureTopbarButton_(); }catch(err){ console.warn('Phase15 topbar failed', err); }
+  try{ phase15PostRenderDashboard_(); }catch{}
+  try{ phase15PostRenderMilestones_(); }catch{}
+  try{ phase15PostRenderChecklist_(); }catch{}
+}
+
+function phase15EnsureStyles_(){
+  if(document.querySelector('#phase15Styles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase15Styles';
+  st.textContent = `
+    .phase15-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase15-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase15-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:10px}
+    .phase15-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase15-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .phase15-note{font-size:11px;opacity:.8;line-height:1.35}
+    .phase15-kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:8px}
+    .phase15-kv>div{padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase15-kv b{display:block;font-size:10px;opacity:.72;letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+    .phase15-kv span{font-size:13px;font-weight:800}
+    .phase15-fields{display:grid;gap:8px}
+    .phase15-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .phase15-list{display:grid;gap:8px;margin-top:8px}
+    .phase15-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase15-row__name{font-size:12px;font-weight:700}
+    .phase15-row__meta{font-size:11px;opacity:.78;line-height:1.3}
+    .phase15-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .phase15-tag{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:2px 7px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+    .phase15-tag.owner{border-color:rgba(105,255,200,.28);color:#bbfff0}
+    .phase15-tag.reviewer{border-color:rgba(255,191,92,.28);color:#ffe0ac}
+    .phase15-tag.executor{border-color:rgba(160,190,255,.22);color:#d7e2ff}
+    .phase15-tag.warn{border-color:rgba(255,120,120,.28);color:#ffd0d0}
+    .phase15-pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.35;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.14);margin-top:8px;max-height:220px;overflow:auto}
+    .phase15-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px}
+    .phase15-table th,.phase15-table td{padding:6px 7px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}
+    .phase15-inlineHelp{font-size:11px;opacity:.76}
+    .phase15-compact select,.phase15-compact input{max-width:100%}
+    @media (max-width:980px){ .phase15-grid{grid-template-columns:1fr} .phase15-kv{grid-template-columns:1fr 1fr} .phase15-fields .row{grid-template-columns:1fr} }
+    @media (max-width:640px){ .phase15-kv{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase15DefaultCfg_(){
+  return {
+    defaultPolicy: {
+      requireReviewBeforeApprove: true,
+      taskApproverRole: 'owner_reviewer',    // owner | owner_reviewer
+      milestoneApproverRole: 'owner_reviewer',
+      taskLockRole: 'owner_reviewer',         // owner | owner_reviewer
+      milestoneLockRole: 'owner',             // owner | owner_reviewer
+      autoLockTaskOnApprove: false,
+      autoLockMilestoneOnApprove: false,
+      requireUnlockReason: true,
+    }
+  };
+}
+function phase15DefaultSession_(){
+  return { role:'owner', name:'ME' };
+}
+function phase15LoadCfg_(){
+  if(phase15State_.cfg) return phase15State_.cfg;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE15_RBAC_CFG_KEY) || 'null'); }catch{}
+  const d = phase15DefaultCfg_();
+  const cfg = {
+    defaultPolicy: phase15NormalizePolicy_(raw && raw.defaultPolicy, d.defaultPolicy)
+  };
+  phase15State_.cfg = cfg;
+  return cfg;
+}
+function phase15SaveCfg_(){ try{ localStorage.setItem(PHASE15_RBAC_CFG_KEY, JSON.stringify(phase15LoadCfg_())); }catch{} }
+function phase15LoadSession_(){
+  if(phase15State_.session) return phase15State_.session;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE15_SESSION_KEY) || 'null'); }catch{}
+  const d = phase15DefaultSession_();
+  phase15State_.session = {
+    role: phase15NormRole_(raw && raw.role || d.role),
+    name: String(raw && raw.name || d.name || 'ME').trim().slice(0,48) || 'ME'
+  };
+  return phase15State_.session;
+}
+function phase15SaveSession_(){ try{ localStorage.setItem(PHASE15_SESSION_KEY, JSON.stringify(phase15LoadSession_())); }catch{} }
+
+function phase15NormRole_(r){
+  const s = String(r||'owner').toLowerCase();
+  return (s==='reviewer' || s==='executor') ? s : 'owner';
+}
+function phase15NormalizePolicy_(p, fallback){
+  const fb = fallback || (phase15DefaultCfg_().defaultPolicy);
+  p = p || {};
+  const pick = (v, allowed, def) => allowed.includes(String(v||'')) ? String(v) : def;
+  return {
+    requireReviewBeforeApprove: p.requireReviewBeforeApprove !== undefined ? !!p.requireReviewBeforeApprove : !!fb.requireReviewBeforeApprove,
+    taskApproverRole: pick(p.taskApproverRole, ['owner','owner_reviewer'], fb.taskApproverRole),
+    milestoneApproverRole: pick(p.milestoneApproverRole, ['owner','owner_reviewer'], fb.milestoneApproverRole),
+    taskLockRole: pick(p.taskLockRole, ['owner','owner_reviewer'], fb.taskLockRole),
+    milestoneLockRole: pick(p.milestoneLockRole, ['owner','owner_reviewer'], fb.milestoneLockRole),
+    autoLockTaskOnApprove: p.autoLockTaskOnApprove !== undefined ? !!p.autoLockTaskOnApprove : !!fb.autoLockTaskOnApprove,
+    autoLockMilestoneOnApprove: p.autoLockMilestoneOnApprove !== undefined ? !!p.autoLockMilestoneOnApprove : !!fb.autoLockMilestoneOnApprove,
+    requireUnlockReason: p.requireUnlockReason !== undefined ? !!p.requireUnlockReason : !!fb.requireUnlockReason,
+  };
+}
+function phase15PatchSanitizers_(){
+  if(typeof sanitizeMilestone === 'function' && !sanitizeMilestone._phase15WrappedPolicy){
+    const _orig = sanitizeMilestone;
+    sanitizeMilestone = function(m){
+      const out = _orig(m);
+      const dpol = phase15LoadCfg_().defaultPolicy;
+      out.approvalPolicy = phase15NormalizePolicy_(m && m.approvalPolicy, dpol);
+      return out;
+    };
+    sanitizeMilestone._phase15WrappedPolicy = true;
+  }
+  if(typeof mkMilestone === 'function' && !mkMilestone._phase15WrappedPolicy){
+    const _orig = mkMilestone;
+    mkMilestone = function(){
+      const m = _orig.apply(this, arguments);
+      try{ m.approvalPolicy = phase15NormalizePolicy_(m.approvalPolicy, phase15LoadCfg_().defaultPolicy); }catch{}
+      return m;
+    };
+    mkMilestone._phase15WrappedPolicy = true;
+  }
+}
+function phase15GetMilestonePolicy_(ms){
+  const dpol = phase15LoadCfg_().defaultPolicy;
+  if(!ms || typeof ms !== 'object') return phase15NormalizePolicy_(null, dpol);
+  ms.approvalPolicy = phase15NormalizePolicy_(ms.approvalPolicy, dpol);
+  return ms.approvalPolicy;
+}
+
+function phase15PolicyRoleAllows_(rule, role){
+  role = phase15NormRole_(role);
+  rule = String(rule || 'owner');
+  if(rule === 'owner_reviewer') return role === 'owner' || role === 'reviewer';
+  return role === 'owner';
+}
+function phase15CanAction_(action, ctx){
+  const role = phase15LoadSession_().role;
+  const ms = ctx && ctx.ms;
+  const pol = phase15GetMilestonePolicy_(ms);
+  if(action === 'task_request_review') return role === 'owner' || role === 'reviewer' || role === 'executor';
+  if(action === 'task_approve' || action === 'task_rework') return phase15PolicyRoleAllows_(pol.taskApproverRole, role);
+  if(action === 'task_lock_toggle') return phase15PolicyRoleAllows_(pol.taskLockRole, role) || role === 'owner'; // owner override
+  if(action === 'ms_request_review') return role === 'owner' || role === 'reviewer';
+  if(action === 'ms_approve' || action === 'ms_rework') return phase15PolicyRoleAllows_(pol.milestoneApproverRole, role);
+  if(action === 'ms_lock_toggle') return phase15PolicyRoleAllows_(pol.milestoneLockRole, role) || role === 'owner';
+  if(action === 'policy_edit' || action === 'defaults_edit') return role === 'owner';
+  return false;
+}
+function phase15Deny_(msg, extra){
+  try{ addActivity(`Phase15 permission denied${extra ? ' • ' + extra : ''}`); }catch{}
+  alert(msg || 'Phase 15 permission denied for current role.');
+}
+function phase15StampOverride_(ctx, payload){
+  const who = phase15LoadSession_().name || 'ME';
+  const note = String(payload && payload.note || '').trim();
+  try{
+    if(typeof phase14LogApprovalAction_ === 'function'){
+      phase14LogApprovalAction_(ctx || {}, {
+        targetType: payload.targetType || (ctx && ctx.t ? 'task' : 'milestone'),
+        action: payload.action || 'override',
+        targetId: payload.targetId || (ctx && (ctx.t?.id || ctx.ms?.id)) || '',
+        title: payload.title || (ctx && (ctx.t?.title || ctx.ms?.title)) || '',
+        state: payload.state || '',
+        locked: !!payload.locked,
+        note: `${who}${note ? ' • ' + note : ''}`.slice(0,280)
+      });
+      return;
+    }
+  }catch{}
+  try{ addActivity(`Phase15 override by ${who}${note ? ' • ' + note : ''}`); }catch{}
+}
+function phase15SetReviewerNames_(){
+  const session = phase15LoadSession_();
+  if(!session.name) return;
+  const p = getActiveProject && getActiveProject();
+  const ms = p ? getActiveMilestone(p) : null;
+  if(!ms) return;
+  let changed = false;
+  for(const t of (ms.tasks || [])){
+    const a = (typeof phase14TaskApproval_ === 'function') ? phase14TaskApproval_(t) : (t && t.approval);
+    if(a && a.state === 'approved' && a.approvedAt && (!a.reviewer || a.reviewer === 'ME')){ a.reviewer = session.name; changed = true; }
+  }
+  try{
+    const ma = (typeof phase14MilestoneApproval_ === 'function') ? phase14MilestoneApproval_(ms) : (ms && ms.approval);
+    if(ma && ma.state === 'approved' && ma.approvedAt && (!ma.reviewer || ma.reviewer === 'ME')){ ma.reviewer = session.name; changed = true; }
+  }catch{}
+  if(changed){ try{ saveState({ skipHistory:true }); }catch{} }
+}
+
+function phase15WrapApprovalActions_(){
+  if(typeof phase14SetTaskApprovalState_ === 'function' && !phase14SetTaskApprovalState_._phase15Wrapped){
+    const _orig = phase14SetTaskApprovalState_;
+    phase14SetTaskApprovalState_ = async function(taskId, nextState){
+      const ctx = (typeof phase14TaskCtxInActive_ === 'function') ? phase14TaskCtxInActive_(taskId) : null;
+      if(!ctx) return _orig.apply(this, arguments);
+      const t = ctx.t;
+      const a = (typeof phase14TaskApproval_ === 'function') ? phase14TaskApproval_(t) : (t.approval||{});
+      const target = (nextState === 'approved' || nextState === 'review') ? nextState : 'draft';
+      const pol = phase15GetMilestonePolicy_(ctx.ms);
+      const action = target === 'review' ? 'task_request_review' : target === 'approved' ? 'task_approve' : 'task_rework';
+      if(!phase15CanAction_(action, ctx)) return phase15Deny_(`Current role (${phase15LoadSession_().role}) cannot ${target === 'approved' ? 'approve' : target === 'review' ? 'request review for' : 'rework'} tasks in this milestone policy.`);
+      if(target === 'approved' && pol.requireReviewBeforeApprove && a.state !== 'review' && a.state !== 'approved'){
+        return phase15Deny_('Policy requires task review before approval. Move the task to In Review first.');
+      }
+      const prevLocked = !!a.locked;
+      const prevState = String(a.state || 'draft');
+      const r = await _orig.apply(this, arguments);
+      try{ phase15SetReviewerNames_(); }catch{}
+      try{
+        const afterCtx = (typeof phase14TaskCtxInActive_ === 'function') ? phase14TaskCtxInActive_(taskId) : ctx;
+        const aa = afterCtx && afterCtx.t ? phase14TaskApproval_(afterCtx.t) : null;
+        if(aa && target === 'approved' && pol.autoLockTaskOnApprove && !aa.locked){
+          aa.locked = true; aa.updatedAt = Date.now();
+          phase15StampOverride_(afterCtx, { action:'auto_lock_on_approve', targetType:'task', targetId: afterCtx.t.id, title: afterCtx.t.title, state: aa.state, locked:true, note:'policy auto-lock task on approve' });
+          saveState({ skipHistory:true });
+          renderAll();
+        } else if(aa && (prevState !== aa.state || prevLocked !== aa.locked)) {
+          try{ saveState({ skipHistory:true }); }catch{}
+        }
+      }catch(err){ console.warn('Phase15 task post-approve patch failed', err); }
+      return r;
+    };
+    phase14SetTaskApprovalState_._phase15Wrapped = true;
+  }
+
+  if(typeof phase14ToggleTaskLock_ === 'function' && !phase14ToggleTaskLock_._phase15Wrapped){
+    const _orig = phase14ToggleTaskLock_;
+    phase14ToggleTaskLock_ = async function(taskId){
+      const ctx = (typeof phase14TaskCtxInActive_ === 'function') ? phase14TaskCtxInActive_(taskId) : null;
+      if(!ctx) return _orig.apply(this, arguments);
+      const a = phase14TaskApproval_(ctx.t);
+      const pol = phase15GetMilestonePolicy_(ctx.ms);
+      if(!phase15CanAction_('task_lock_toggle', ctx)) return phase15Deny_(`Current role (${phase15LoadSession_().role}) cannot change task lock state for this milestone policy.`);
+      let unlockReason = '';
+      if(a.locked && pol.requireUnlockReason){
+        const raw = await pmPromptDialog_(`Unlock override reason required for task "${ctx.t.title}".`, '', { title:'Unlock Task Override Reason', placeholder:'Reason required' });
+        if(raw == null) return;
+        unlockReason = String(raw || '').trim().slice(0,280);
+        if(!unlockReason) return alert('Unlock override reason is required by Phase 15 policy.');
+      }
+      const r = _orig.apply(this, arguments);
+      if(unlockReason){
+        try{ phase15StampOverride_(ctx, { action:'unlock_override_reason', targetType:'task', targetId:ctx.t.id, title:ctx.t.title, state:phase14TaskApproval_(ctx.t).state, locked:phase14TaskApproval_(ctx.t).locked, note:unlockReason }); }catch{}
+      }
+      return r;
+    };
+    phase14ToggleTaskLock_._phase15Wrapped = true;
+  }
+
+  if(typeof phase14SetMilestoneApprovalState_ === 'function' && !phase14SetMilestoneApprovalState_._phase15Wrapped){
+    const _orig = phase14SetMilestoneApprovalState_;
+    phase14SetMilestoneApprovalState_ = async function(nextState){
+      const ctx = (typeof phase14CurrentMilestoneCtx_ === 'function') ? phase14CurrentMilestoneCtx_() : null;
+      if(!ctx) return _orig.apply(this, arguments);
+      const a = phase14MilestoneApproval_(ctx.ms);
+      const target = (nextState === 'approved' || nextState === 'review') ? nextState : 'draft';
+      const pol = phase15GetMilestonePolicy_(ctx.ms);
+      const action = target === 'review' ? 'ms_request_review' : target === 'approved' ? 'ms_approve' : 'ms_rework';
+      if(!phase15CanAction_(action, ctx)) return phase15Deny_(`Current role (${phase15LoadSession_().role}) cannot ${target === 'approved' ? 'approve' : target === 'review' ? 'request review for' : 'rework'} milestones in this policy.`);
+      if(target === 'approved' && pol.requireReviewBeforeApprove && a.state !== 'review' && a.state !== 'approved'){
+        return phase15Deny_('Policy requires milestone review before approval. Move the milestone to In Review first.');
+      }
+      const prevLocked = !!a.locked; const prevState = String(a.state || 'draft');
+      const r = await _orig.apply(this, arguments);
+      try{ phase15SetReviewerNames_(); }catch{}
+      try{
+        const afterCtx = (typeof phase14CurrentMilestoneCtx_ === 'function') ? phase14CurrentMilestoneCtx_() : ctx;
+        const aa = afterCtx && afterCtx.ms ? phase14MilestoneApproval_(afterCtx.ms) : null;
+        if(aa && target === 'approved' && pol.autoLockMilestoneOnApprove && !aa.locked){
+          aa.locked = true; aa.updatedAt = Date.now();
+          phase15StampOverride_(afterCtx, { action:'auto_lock_on_approve', targetType:'milestone', targetId:afterCtx.ms.id, title:afterCtx.ms.title, state:aa.state, locked:true, note:'policy auto-lock milestone on approve' });
+          saveState({ skipHistory:true });
+          renderAll();
+        } else if(aa && (prevState !== aa.state || prevLocked !== aa.locked)) {
+          try{ saveState({ skipHistory:true }); }catch{}
+        }
+      }catch(err){ console.warn('Phase15 milestone post-approve patch failed', err); }
+      return r;
+    };
+    phase14SetMilestoneApprovalState_._phase15Wrapped = true;
+  }
+
+  if(typeof phase14ToggleMilestoneLock_ === 'function' && !phase14ToggleMilestoneLock_._phase15Wrapped){
+    const _orig = phase14ToggleMilestoneLock_;
+    phase14ToggleMilestoneLock_ = async function(){
+      const ctx = (typeof phase14CurrentMilestoneCtx_ === 'function') ? phase14CurrentMilestoneCtx_() : null;
+      if(!ctx) return _orig.apply(this, arguments);
+      const a = phase14MilestoneApproval_(ctx.ms);
+      const pol = phase15GetMilestonePolicy_(ctx.ms);
+      if(!phase15CanAction_('ms_lock_toggle', ctx)) return phase15Deny_(`Current role (${phase15LoadSession_().role}) cannot change milestone lock state for this policy.`);
+      let unlockReason = '';
+      if(a.locked && pol.requireUnlockReason){
+        const raw = await pmPromptDialog_(`Unlock override reason required for milestone "${ctx.ms.title}".`, '', { title:'Unlock Milestone Override Reason', placeholder:'Reason required' });
+        if(raw == null) return;
+        unlockReason = String(raw || '').trim().slice(0,280);
+        if(!unlockReason) return alert('Unlock override reason is required by Phase 15 policy.');
+      }
+      const r = _orig.apply(this, arguments);
+      if(unlockReason){
+        try{ phase15StampOverride_(ctx, { action:'unlock_override_reason', targetType:'milestone', targetId:ctx.ms.id, title:ctx.ms.title, state:phase14MilestoneApproval_(ctx.ms).state, locked:phase14MilestoneApproval_(ctx.ms).locked, note:unlockReason }); }catch{}
+      }
+      return r;
+    };
+    phase14ToggleMilestoneLock_._phase15Wrapped = true;
+  }
+}
+
+function phase15WrapCore_(){
+  if(typeof renderDashboard === 'function' && !renderDashboard._phase15Wrapped){
+    const _orig = renderDashboard;
+    renderDashboard = function(){ const r = _orig.apply(this, arguments); try{ phase15PostRenderDashboard_(); }catch(err){ console.warn('Phase15 dashboard render failed', err); } return r; };
+    renderDashboard._phase15Wrapped = true;
+  }
+  if(typeof renderMilestones === 'function' && !renderMilestones._phase15Wrapped){
+    const _orig = renderMilestones;
+    renderMilestones = function(){ const r = _orig.apply(this, arguments); try{ phase15PostRenderMilestones_(); }catch(err){ console.warn('Phase15 milestones render failed', err); } return r; };
+    renderMilestones._phase15Wrapped = true;
+  }
+  if(typeof renderChecklist === 'function' && !renderChecklist._phase15Wrapped){
+    const _orig = renderChecklist;
+    renderChecklist = function(){ const r = _orig.apply(this, arguments); try{ phase15PostRenderChecklist_(); }catch(err){ console.warn('Phase15 checklist render failed', err); } return r; };
+    renderChecklist._phase15Wrapped = true;
+  }
+}
+
+function phase15EnsureTopbarButton_(){
+  const topbarRight = document.querySelector('#topbarRight') || document.querySelector('.topbar__right') || document.querySelector('.topbar-right');
+  if(!topbarRight) return;
+  let btn = document.querySelector('#phase15BtnRoles');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.id = 'phase15BtnRoles';
+    btn.type = 'button';
+    btn.className = 'btn btn--ghost';
+    btn.textContent = 'Roles';
+    topbarRight.appendChild(btn);
+  }
+  const sess = phase15LoadSession_();
+  btn.title = `Phase 15 approval role: ${sess.role}${sess.name ? ' ('+sess.name+')' : ''}`;
+  btn.onclick = function(){
+    openPanelInOwningTab_('#phase15RbacPanel', 'dashboard', 20);
+  };
+}
+
+function phase15RoleLabel_(r){ r = phase15NormRole_(r); return r === 'reviewer' ? 'Reviewer' : r === 'executor' ? 'Executor' : 'Owner'; }
+function phase15PolicyRuleLabel_(v){ return String(v||'owner') === 'owner_reviewer' ? 'Owner or Reviewer' : 'Owner only'; }
+function phase15CurrentCtx_(){
+  const p = getActiveProject && getActiveProject();
+  const mod = p ? getActiveModule(p) : null;
+  const ms = p ? getActiveMilestone(p) : null;
+  return { p, mod, ms };
+}
+
+function phase15PostRenderDashboard_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  let box = document.querySelector('#phase15RbacPanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase15RbacPanel';
+    box.className = 'phase15-box';
+    const host = document.querySelector('#phase14ApprovalQueuePanel') || document.querySelector('#phase13DashboardHost') || document.querySelector('#phase12DashboardHost') || document.querySelector('#phase10DashboardHost') || document.querySelector('#phase8DashboardHost');
+    if(host && host.parentElement) host.parentElement.insertBefore(box, host);
+    else tab.appendChild(box);
+  }
+  const sess = phase15LoadSession_();
+  const cfg = phase15LoadCfg_();
+  const ctx = phase15CurrentCtx_();
+  const pol = phase15GetMilestonePolicy_(ctx.ms);
+  const q = (typeof phase14CollectApprovalQueue_ === 'function') ? phase14CollectApprovalQueue_({ onlyActiveProject:false }) : {taskReview:0, taskLocked:0, milestoneReview:0, milestoneLocked:0};
+  box.innerHTML = `
+    <div class="phase15-title">Phase 15 RBAC-lite Approval Profiles</div>
+    <div class="phase15-grid">
+      <div class="phase15-card phase15-compact">
+        <div class="phase15-toolbar">
+          <span class="phase15-tag ${escapeHtml(sess.role)}">${escapeHtml(phase15RoleLabel_(sess.role))}</span>
+          <button class="btn btn--ghost" type="button" id="phase15BtnOpenMsPolicy">Open Milestone Policy</button>
+          <button class="btn btn--ghost" type="button" id="phase15BtnOpenTaskReview">Open Task Review Queue</button>
+        </div>
+        <div class="phase15-fields" style="margin-top:8px">
+          <div class="row">
+            <label>Current role
+              <select id="phase15RoleSelect">
+                <option value="owner" ${sess.role==='owner'?'selected':''}>Owner</option>
+                <option value="reviewer" ${sess.role==='reviewer'?'selected':''}>Reviewer</option>
+                <option value="executor" ${sess.role==='executor'?'selected':''}>Executor</option>
+              </select>
+            </label>
+            <label>Display name
+              <input id="phase15RoleName" type="text" maxlength="48" value="${escapeHtml(sess.name||'ME')}">
+            </label>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="phase15DefRequireReview" ${cfg.defaultPolicy.requireReviewBeforeApprove?'checked':''}> Default: require review before approve</label>
+            <label><input type="checkbox" id="phase15DefRequireUnlockReason" ${cfg.defaultPolicy.requireUnlockReason?'checked':''}> Default: require unlock reason</label>
+          </div>
+          <div class="row">
+            <label>Default task approver
+              <select id="phase15DefTaskApproverRole"><option value="owner" ${cfg.defaultPolicy.taskApproverRole==='owner'?'selected':''}>Owner only</option><option value="owner_reviewer" ${cfg.defaultPolicy.taskApproverRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option></select>
+            </label>
+            <label>Default milestone approver
+              <select id="phase15DefMsApproverRole"><option value="owner" ${cfg.defaultPolicy.milestoneApproverRole==='owner'?'selected':''}>Owner only</option><option value="owner_reviewer" ${cfg.defaultPolicy.milestoneApproverRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option></select>
+            </label>
+          </div>
+          <div class="row">
+            <label>Default task lock control
+              <select id="phase15DefTaskLockRole"><option value="owner" ${cfg.defaultPolicy.taskLockRole==='owner'?'selected':''}>Owner only</option><option value="owner_reviewer" ${cfg.defaultPolicy.taskLockRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option></select>
+            </label>
+            <label>Default milestone lock control
+              <select id="phase15DefMsLockRole"><option value="owner" ${cfg.defaultPolicy.milestoneLockRole==='owner'?'selected':''}>Owner only</option><option value="owner_reviewer" ${cfg.defaultPolicy.milestoneLockRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option></select>
+            </label>
+          </div>
+          <div class="row">
+            <label><input type="checkbox" id="phase15DefAutoLockTask" ${cfg.defaultPolicy.autoLockTaskOnApprove?'checked':''}> Default auto-lock task on approve</label>
+            <label><input type="checkbox" id="phase15DefAutoLockMs" ${cfg.defaultPolicy.autoLockMilestoneOnApprove?'checked':''}> Default auto-lock milestone on approve</label>
+          </div>
+          <div class="phase15-toolbar">
+            <button class="btn btn--ghost" type="button" id="phase15BtnSaveRoleDefaults">Save Role & Defaults</button>
+            <button class="btn btn--ghost" type="button" id="phase15BtnResetRoleDefaults">Reset Defaults</button>
+          </div>
+        </div>
+        <div class="phase15-note" style="margin-top:8px">RBAC-lite controls approval/lock actions from Phase 14 queues. Editing tasks remains governed by existing milestone/task lock guardrails.</div>
+      </div>
+      <div class="phase15-card">
+        <div class="phase15-title" style="margin-bottom:6px">Permission Matrix</div>
+        <table class="phase15-table">
+          <thead><tr><th>Action</th><th>Owner</th><th>Reviewer</th><th>Executor</th></tr></thead>
+          <tbody>
+            <tr><td>Task: Request review</td><td>✓</td><td>✓</td><td>✓</td></tr>
+            <tr><td>Task: Approve / Rework</td><td>✓</td><td>Policy</td><td>—</td></tr>
+            <tr><td>Task: Lock / Unlock</td><td>✓ (override)</td><td>Policy</td><td>—</td></tr>
+            <tr><td>Milestone: Request review</td><td>✓</td><td>✓</td><td>—</td></tr>
+            <tr><td>Milestone: Approve / Rework</td><td>✓</td><td>Policy</td><td>—</td></tr>
+            <tr><td>Milestone: Lock / Unlock</td><td>✓ (override)</td><td>Policy</td><td>—</td></tr>
+            <tr><td>Edit policy / defaults</td><td>✓</td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <div class="phase15-kv">
+          <div><b>Task review queue</b><span>${Number(q.taskReview||0)}</span></div>
+          <div><b>Task locked</b><span>${Number(q.taskLocked||0)}</span></div>
+          <div><b>Milestone review</b><span>${Number(q.milestoneReview||0)}</span></div>
+          <div><b>Milestone locked</b><span>${Number(q.milestoneLocked||0)}</span></div>
+        </div>
+        <div class="phase15-pre">Active milestone policy (${ctx.ms ? escapeHtml(String(ctx.ms.title||'')) : 'none selected'})
+require review before approve: ${pol.requireReviewBeforeApprove ? 'yes' : 'no'}
+require unlock reason: ${pol.requireUnlockReason ? 'yes' : 'no'}
+task approver: ${phase15PolicyRuleLabel_(pol.taskApproverRole)}
+milestone approver: ${phase15PolicyRuleLabel_(pol.milestoneApproverRole)}
+task lock control: ${phase15PolicyRuleLabel_(pol.taskLockRole)}
+milestone lock control: ${phase15PolicyRuleLabel_(pol.milestoneLockRole)}
+auto-lock task on approve: ${pol.autoLockTaskOnApprove ? 'yes' : 'no'}
+auto-lock milestone on approve: ${pol.autoLockMilestoneOnApprove ? 'yes' : 'no'}</div>
+      </div>
+    </div>
+  `;
+  box.querySelector('#phase15BtnOpenMsPolicy')?.addEventListener('click', ()=>{ switchTab('milestones'); setTimeout(()=>document.querySelector('#phase15MilestonePolicyPanel, #phase14MilestoneApprovalPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase15BtnOpenTaskReview')?.addEventListener('click', ()=>{ switchTab('checklist'); setTimeout(()=>document.querySelector('#phase14ChecklistApprovalPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase15BtnSaveRoleDefaults')?.addEventListener('click', ()=>{
+    const sess2 = phase15LoadSession_();
+    const cfg2 = phase15LoadCfg_();
+    const role = phase15NormRole_(box.querySelector('#phase15RoleSelect')?.value);
+    const name = String(box.querySelector('#phase15RoleName')?.value || '').trim().slice(0,48) || 'ME';
+    sess2.role = role; sess2.name = name; phase15SaveSession_();
+    if(!phase15CanAction_('defaults_edit', { ms: ctx.ms })){
+      phase15EnsureTopbarButton_();
+      phase15PostRenderChecklist_();
+      phase15PostRenderMilestones_();
+      return phase15Deny_('Only Owner role can modify Phase 15 default approval profile settings. Role switch saved, defaults unchanged.');
+    }
+    cfg2.defaultPolicy = phase15NormalizePolicy_({
+      requireReviewBeforeApprove: !!box.querySelector('#phase15DefRequireReview')?.checked,
+      requireUnlockReason: !!box.querySelector('#phase15DefRequireUnlockReason')?.checked,
+      taskApproverRole: box.querySelector('#phase15DefTaskApproverRole')?.value,
+      milestoneApproverRole: box.querySelector('#phase15DefMsApproverRole')?.value,
+      taskLockRole: box.querySelector('#phase15DefTaskLockRole')?.value,
+      milestoneLockRole: box.querySelector('#phase15DefMsLockRole')?.value,
+      autoLockTaskOnApprove: !!box.querySelector('#phase15DefAutoLockTask')?.checked,
+      autoLockMilestoneOnApprove: !!box.querySelector('#phase15DefAutoLockMs')?.checked,
+    }, cfg2.defaultPolicy);
+    phase15SaveCfg_();
+    try{ addActivity(`Phase15 saved role/defaults • ${phase15RoleLabel_(role)} (${name})`); }catch{}
+    try{ saveState({ skipHistory:true }); }catch{}
+    phase15EnsureTopbarButton_();
+    renderAll();
+  });
+  box.querySelector('#phase15BtnResetRoleDefaults')?.addEventListener('click', async ()=>{
+    const okReset = await pmConfirmDialog_('Reset Phase 15 default approval profile settings? Current role/name will be kept.', { title:'Reset Approval Profile Defaults', okText:'Reset', danger:true });
+    if(!okReset) return;
+    const d = phase15DefaultCfg_();
+    phase15LoadCfg_().defaultPolicy = phase15NormalizePolicy_(d.defaultPolicy, d.defaultPolicy);
+    phase15SaveCfg_();
+    try{ addActivity('Phase15 reset default approval profile settings'); }catch{}
+    renderAll();
+  });
+  phase15EnsureTopbarButton_();
+}
+
+function phase15PostRenderMilestones_(){
+  const tab = document.querySelector('#tab-milestones');
+  if(!tab) return;
+  const cards = Array.from(tab.querySelectorAll('.card'));
+  const detailCard = cards[1] || cards[cards.length-1];
+  if(!detailCard) return;
+  let box = document.querySelector('#phase15MilestonePolicyPanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase15MilestonePolicyPanel';
+    box.className = 'phase15-box';
+    const anchor = document.querySelector('#phase14MilestoneApprovalPanel');
+    if(anchor && anchor.parentElement === detailCard) anchor.insertAdjacentElement('afterend', box);
+    else detailCard.appendChild(box);
+  }
+  const ctx = phase15CurrentCtx_();
+  if(!ctx.ms){
+    box.innerHTML = `<div class="phase15-title">Phase 15 Milestone Approval Policy</div><div class="phase15-note">Select a milestone to set its approval policy and role permissions.</div>`;
+    return;
+  }
+  const sess = phase15LoadSession_();
+  const pol = phase15GetMilestonePolicy_(ctx.ms);
+  const dpol = phase15LoadCfg_().defaultPolicy;
+  const roleCanEdit = phase15CanAction_('policy_edit', ctx);
+  box.innerHTML = `
+    <div class="phase15-title">Phase 15 Milestone Approval Policy</div>
+    <div class="phase15-toolbar">
+      <span class="phase15-tag ${escapeHtml(sess.role)}">Role: ${escapeHtml(phase15RoleLabel_(sess.role))}</span>
+      <button class="btn btn--ghost" type="button" id="phase15BtnPolicyApplyDefaults" ${roleCanEdit ? '' : 'disabled'}>Apply Defaults</button>
+      <button class="btn btn--ghost" type="button" id="phase15BtnPolicySave" ${roleCanEdit ? '' : 'disabled'}>Save Policy</button>
+    </div>
+    <div class="phase15-fields phase15-compact" style="margin-top:8px">
+      <div class="row">
+        <label><input type="checkbox" id="phase15MsRequireReview" ${pol.requireReviewBeforeApprove?'checked':''} ${roleCanEdit?'':'disabled'}> Require review before approve</label>
+        <label><input type="checkbox" id="phase15MsRequireUnlockReason" ${pol.requireUnlockReason?'checked':''} ${roleCanEdit?'':'disabled'}> Require unlock override reason</label>
+      </div>
+      <div class="row">
+        <label>Task approver role
+          <select id="phase15MsTaskApproverRole" ${roleCanEdit?'':'disabled'}>
+            <option value="owner" ${pol.taskApproverRole==='owner'?'selected':''}>Owner only</option>
+            <option value="owner_reviewer" ${pol.taskApproverRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option>
+          </select>
+        </label>
+        <label>Milestone approver role
+          <select id="phase15MsApproverRole" ${roleCanEdit?'':'disabled'}>
+            <option value="owner" ${pol.milestoneApproverRole==='owner'?'selected':''}>Owner only</option>
+            <option value="owner_reviewer" ${pol.milestoneApproverRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Task lock control role
+          <select id="phase15MsTaskLockRole" ${roleCanEdit?'':'disabled'}>
+            <option value="owner" ${pol.taskLockRole==='owner'?'selected':''}>Owner only</option>
+            <option value="owner_reviewer" ${pol.taskLockRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option>
+          </select>
+        </label>
+        <label>Milestone lock control role
+          <select id="phase15MsLockRole" ${roleCanEdit?'':'disabled'}>
+            <option value="owner" ${pol.milestoneLockRole==='owner'?'selected':''}>Owner only</option>
+            <option value="owner_reviewer" ${pol.milestoneLockRole==='owner_reviewer'?'selected':''}>Owner or Reviewer</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="phase15MsAutoLockTask" ${pol.autoLockTaskOnApprove?'checked':''} ${roleCanEdit?'':'disabled'}> Auto-lock task on approve</label>
+        <label><input type="checkbox" id="phase15MsAutoLockMs" ${pol.autoLockMilestoneOnApprove?'checked':''} ${roleCanEdit?'':'disabled'}> Auto-lock milestone on approve</label>
+      </div>
+    </div>
+    <div class="phase15-note" style="margin-top:8px">Milestone: <b>${escapeHtml(String(ctx.ms.title||''))}</b> • Project: <b>${escapeHtml(String(ctx.p?.name||''))}</b></div>
+    <div class="phase15-inlineHelp">Defaults are used for new milestones and as fallback. Per-milestone policy overrides Phase 14 approval actions and Phase 15 unlock reason prompts.</div>
+    ${roleCanEdit ? '' : '<div class="phase15-note" style="color:#ffd0d0;margin-top:6px">Only Owner role can modify milestone approval policy.</div>'}
+    <div class="phase15-pre">Current vs defaults
+Task approver: ${phase15PolicyRuleLabel_(pol.taskApproverRole)} (default: ${phase15PolicyRuleLabel_(dpol.taskApproverRole)})
+Milestone approver: ${phase15PolicyRuleLabel_(pol.milestoneApproverRole)} (default: ${phase15PolicyRuleLabel_(dpol.milestoneApproverRole)})
+Task lock control: ${phase15PolicyRuleLabel_(pol.taskLockRole)} (default: ${phase15PolicyRuleLabel_(dpol.taskLockRole)})
+Milestone lock control: ${phase15PolicyRuleLabel_(pol.milestoneLockRole)} (default: ${phase15PolicyRuleLabel_(dpol.milestoneLockRole)})</div>
+  `;
+  const readUiPolicy = () => phase15NormalizePolicy_({
+    requireReviewBeforeApprove: !!box.querySelector('#phase15MsRequireReview')?.checked,
+    requireUnlockReason: !!box.querySelector('#phase15MsRequireUnlockReason')?.checked,
+    taskApproverRole: box.querySelector('#phase15MsTaskApproverRole')?.value,
+    milestoneApproverRole: box.querySelector('#phase15MsApproverRole')?.value,
+    taskLockRole: box.querySelector('#phase15MsTaskLockRole')?.value,
+    milestoneLockRole: box.querySelector('#phase15MsLockRole')?.value,
+    autoLockTaskOnApprove: !!box.querySelector('#phase15MsAutoLockTask')?.checked,
+    autoLockMilestoneOnApprove: !!box.querySelector('#phase15MsAutoLockMs')?.checked,
+  }, dpol);
+  box.querySelector('#phase15BtnPolicyApplyDefaults')?.addEventListener('click', async ()=>{
+    if(!phase15CanAction_('policy_edit', ctx)) return phase15Deny_('Only Owner role can apply milestone approval policy defaults.');
+    const okApplyDefaults = await pmConfirmDialog_('Apply current Phase 15 default approval profile to this milestone?', { title:'Apply Milestone Policy Defaults', okText:'Apply' });
+    if(!okApplyDefaults) return;
+    ctx.ms.approvalPolicy = phase15NormalizePolicy_(dpol, dpol);
+    try{ addActivity(`Phase15 applied default approval policy to milestone: ${ctx.ms.title}`); }catch{}
+    saveState(); renderAll();
+  });
+  box.querySelector('#phase15BtnPolicySave')?.addEventListener('click', ()=>{
+    if(!phase15CanAction_('policy_edit', ctx)) return phase15Deny_('Only Owner role can save milestone approval policy.');
+    ctx.ms.approvalPolicy = readUiPolicy();
+    try{ addActivity(`Phase15 saved milestone approval policy: ${ctx.ms.title}`); }catch{}
+    saveState(); renderAll();
+  });
+}
+
+function phase15PostRenderChecklist_(){
+  const tab = document.querySelector('#tab-checklist');
+  if(!tab) return;
+  const cards = Array.from(tab.querySelectorAll('.card'));
+  const tasksCard = cards[1] || cards[cards.length-1];
+  if(!tasksCard) return;
+  let box = document.querySelector('#phase15ChecklistRolePanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase15ChecklistRolePanel';
+    box.className = 'phase15-box';
+    const anchor = document.querySelector('#phase14ChecklistApprovalPanel');
+    if(anchor && anchor.parentElement === tasksCard) anchor.insertAdjacentElement('beforebegin', box);
+    else tasksCard.appendChild(box);
+  }
+  const ctx = phase15CurrentCtx_();
+  const sess = phase15LoadSession_();
+  const pol = phase15GetMilestonePolicy_(ctx.ms);
+  box.innerHTML = `
+    <div class="phase15-title">Phase 15 Approval Role Context</div>
+    <div class="phase15-toolbar">
+      <span class="phase15-tag ${escapeHtml(sess.role)}">${escapeHtml(phase15RoleLabel_(sess.role))}</span>
+      <button class="btn btn--ghost" type="button" id="phase15BtnChecklistOpenRoles">Open Roles Panel</button>
+      <button class="btn btn--ghost" type="button" id="phase15BtnChecklistOpenMsPolicy">Open Milestone Policy</button>
+    </div>
+    <div class="phase15-kv">
+      <div><b>Task approve</b><span>${phase15CanAction_('task_approve', ctx) ? 'allowed' : 'blocked'}</span></div>
+      <div><b>Task lock toggle</b><span>${phase15CanAction_('task_lock_toggle', ctx) ? 'allowed' : 'blocked'}</span></div>
+      <div><b>Require review</b><span>${pol.requireReviewBeforeApprove ? 'yes' : 'no'}</span></div>
+      <div><b>Unlock reason</b><span>${pol.requireUnlockReason ? 'required' : 'optional'}</span></div>
+    </div>
+    <div class="phase15-note" style="margin-top:8px">If a task/milestone is locked and you unlock it, Phase 15 may require an override reason depending on the milestone policy. Owner role always has lock-control override, but a reason can still be required.</div>
+  `;
+  box.querySelector('#phase15BtnChecklistOpenRoles')?.addEventListener('click', ()=>{ switchTab('dashboard'); setTimeout(()=>document.querySelector('#phase15RbacPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase15BtnChecklistOpenMsPolicy')?.addEventListener('click', ()=>{ switchTab('milestones'); setTimeout(()=>document.querySelector('#phase15MilestonePolicyPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+}
+
+try{ initPhase15_(); }catch(err){ console.warn('Phase15 init failed', err); }
+
+
+/* ---------------------------
+   Phase 16 Team Identity & Saved Approver Profiles (Additive Patch)
+   - Saved team member profiles (name + role) with quick switching
+   - Sync active profile with Phase 15 session (role/name)
+   - Approval attribution consistency (actor stamped in approval audit note)
+   - Dashboard + Checklist profile panels + topbar Team button
+---------------------------- */
+var PHASE16_TEAM_KEY = 'stark_pm_phase16_team_profiles_v1';
+var phase16State_ = { inited:false, store:null, syncing:false };
+
+function initPhase16_(){
+  if(phase16State_.inited) return;
+  phase16State_.inited = true;
+  try{ phase16EnsureStyles_(); }catch(err){ console.warn('Phase16 styles failed', err); }
+  try{ phase16EnsureStore_(); }catch(err){ console.warn('Phase16 store init failed', err); }
+  try{ phase16WrapPhase15Session_(); }catch(err){ console.warn('Phase16 session wrap failed', err); }
+  try{ phase16WrapApprovalAuditAttribution_(); }catch(err){ console.warn('Phase16 attribution wrap failed', err); }
+  try{ phase16EnsureTopbarButton_(); }catch(err){ console.warn('Phase16 topbar failed', err); }
+  try{ phase16WrapRenderHooks_(); }catch(err){ console.warn('Phase16 render wrap failed', err); }
+  try{ phase16SyncSessionFromActiveProfile_(true); }catch{}
+  try{ renderAll(); }catch{}
+}
+
+function phase16EnsureStyles_(){
+  if(document.querySelector('#phase16Styles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase16Styles';
+  st.textContent = `
+    .phase16-box{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    .phase16-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-bottom:8px}
+    .phase16-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:10px}
+    .phase16-card{border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:10px;background:rgba(255,255,255,.012)}
+    .phase16-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .phase16-list{display:grid;gap:8px;max-height:300px;overflow:auto}
+    .phase16-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.01)}
+    .phase16-row.is-active{border-color:rgba(0,255,255,.22);box-shadow:0 0 0 1px rgba(0,255,255,.08) inset}
+    .phase16-row__name{font-size:12px;font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .phase16-row__meta{font-size:11px;opacity:.78;line-height:1.35;margin-top:2px}
+    .phase16-tag{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:2px 7px;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
+    .phase16-tag.owner{border-color:rgba(105,255,200,.28);color:#bbfff0}
+    .phase16-tag.reviewer{border-color:rgba(255,191,92,.28);color:#ffe0ac}
+    .phase16-tag.executor{border-color:rgba(160,190,255,.22);color:#d7e2ff}
+    .phase16-tag.active{border-color:rgba(0,255,255,.28);color:#cfffff}
+    .phase16-fields{display:grid;gap:8px}
+    .phase16-fields .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .phase16-note{font-size:11px;opacity:.8;line-height:1.35}
+    .phase16-pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px;line-height:1.35;padding:8px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.14);margin-top:8px;max-height:180px;overflow:auto}
+    .phase16-mini{margin-top:8px;padding:8px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(255,255,255,.012)}
+    .phase16-mini .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+    .phase16-mini .sub{font-size:11px;opacity:.78}
+    @media (max-width:980px){ .phase16-grid{grid-template-columns:1fr} .phase16-fields .row{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase16DefaultStore_(){
+  let sess = null;
+  try{ sess = (typeof phase15LoadSession_ === 'function') ? phase15LoadSession_() : null; }catch{}
+  const role = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(sess && sess.role) : ((String(sess&&sess.role||'owner').toLowerCase()==='reviewer'||String(sess&&sess.role||'').toLowerCase()==='executor')?String(sess.role).toLowerCase():'owner');
+  const name = String(sess && sess.name || 'ME').trim().slice(0,48) || 'ME';
+  const id = 'p16_' + (typeof uid === 'function' ? uid() : String(Date.now()));
+  const now = Date.now();
+  return { version:1, activeProfileId:id, profiles:[{ id, name, role, isDefault:true, createdAt:now, updatedAt:now }] };
+}
+function phase16NormalizeProfile_(p){
+  if(!p || typeof p !== 'object') p = {};
+  const role = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(p.role) : 'owner';
+  const name = String(p.name || 'Member').trim().slice(0,48) || 'Member';
+  return {
+    id: String(p.id || ('p16_' + (typeof uid === 'function' ? uid() : String(Date.now())))),
+    name,
+    role,
+    isDefault: !!p.isDefault,
+    createdAt: Number(p.createdAt || Date.now()),
+    updatedAt: Number(p.updatedAt || Date.now()),
+  };
+}
+function phase16LoadStore_(){
+  if(phase16State_.store) return phase16State_.store;
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE16_TEAM_KEY) || 'null'); }catch{}
+  let store = raw && typeof raw === 'object' ? raw : phase16DefaultStore_();
+  let arr = Array.isArray(store.profiles) ? store.profiles.map(phase16NormalizeProfile_) : [];
+  const seen = new Set();
+  arr = arr.filter(p => { if(!p.id || seen.has(p.id)) return false; seen.add(p.id); return true; });
+  if(!arr.length){
+    store = phase16DefaultStore_();
+    arr = store.profiles.map(phase16NormalizeProfile_);
+  }
+  let activeId = String(store.activeProfileId || arr[0].id || '');
+  if(!arr.some(p => p.id === activeId)) activeId = arr[0].id;
+  // only one default marker
+  let foundDef = false;
+  for(const p of arr){
+    if(p.id === activeId && !foundDef && (p.isDefault || !arr.some(x=>x.isDefault))){ p.isDefault = true; foundDef = true; }
+    else if(p.isDefault && foundDef){ p.isDefault = false; }
+  }
+  if(!arr.some(x=>x.isDefault) && arr[0]) arr[0].isDefault = true;
+  phase16State_.store = { version:1, activeProfileId: activeId, profiles: arr };
+  return phase16State_.store;
+}
+function phase16SaveStore_(){
+  try{ localStorage.setItem(PHASE16_TEAM_KEY, JSON.stringify(phase16LoadStore_())); }catch(err){ console.warn('Phase16 save profiles failed', err); }
+}
+function phase16EnsureStore_(){
+  const s = phase16LoadStore_();
+  // if phase15 session diverged before phase16 existed, mirror current session into active profile once
+  try{
+    const sess = (typeof phase15LoadSession_ === 'function') ? phase15LoadSession_() : null;
+    const p = phase16GetActiveProfile_();
+    if(sess && p && ((p.name !== String(sess.name||'').trim()) || (p.role !== String(sess.role||'')))){
+      p.name = String(sess.name || p.name || 'ME').trim().slice(0,48) || p.name;
+      p.role = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(sess.role) : p.role;
+      p.updatedAt = Date.now();
+      phase16SaveStore_();
+    }
+  }catch{}
+  return s;
+}
+function phase16Profiles_(){ return phase16LoadStore_().profiles || []; }
+function phase16GetActiveProfile_(){
+  const s = phase16LoadStore_();
+  return (s.profiles || []).find(p => p.id === s.activeProfileId) || (s.profiles || [])[0] || null;
+}
+function phase16SetActiveProfile_(profileId, opts){
+  const s = phase16LoadStore_();
+  const p = (s.profiles || []).find(x => x.id === String(profileId||''));
+  if(!p) return false;
+  s.activeProfileId = p.id;
+  s.profiles.forEach(x => { x.isDefault = (x.id === p.id); if(x.isDefault) x.updatedAt = Date.now(); });
+  phase16SaveStore_();
+  phase16SyncSessionFromActiveProfile_(!!(opts && opts.silent));
+  try{ if(!(opts && opts.silent)) addActivity(`Phase16 switched profile • ${p.name} (${(typeof phase15RoleLabel_==='function'?phase15RoleLabel_(p.role):p.role)})`); }catch{}
+  try{ renderAll(); }catch{}
+  return true;
+}
+function phase16SyncSessionFromActiveProfile_(silent){
+  if(phase16State_.syncing) return;
+  phase16State_.syncing = true;
+  try{
+    const p = phase16GetActiveProfile_();
+    if(!p || typeof phase15LoadSession_ !== 'function') return;
+    const sess = phase15LoadSession_();
+    const nextRole = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(p.role) : p.role;
+    const nextName = String(p.name || 'ME').trim().slice(0,48) || 'ME';
+    const changed = (sess.role !== nextRole) || (String(sess.name||'') !== nextName);
+    sess.role = nextRole; sess.name = nextName;
+    if(typeof phase15SaveSession_ === 'function') phase15SaveSession_();
+    if(changed && !silent){ try{ addActivity(`Phase16 synced session from profile • ${nextName}`); }catch{} }
+  }finally{
+    phase16State_.syncing = false;
+  }
+}
+function phase16SyncActiveProfileFromSession_(silent){
+  if(phase16State_.syncing) return;
+  phase16State_.syncing = true;
+  try{
+    const p = phase16GetActiveProfile_();
+    if(!p || typeof phase15LoadSession_ !== 'function') return;
+    const sess = phase15LoadSession_();
+    const nextRole = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(sess.role) : String(sess.role||'owner');
+    const nextName = String(sess.name || 'ME').trim().slice(0,48) || 'ME';
+    const changed = (p.role !== nextRole) || (p.name !== nextName);
+    p.role = nextRole; p.name = nextName; p.updatedAt = Date.now();
+    phase16SaveStore_();
+    if(changed && !silent){ try{ addActivity(`Phase16 updated active profile from Phase15 session • ${nextName}`); }catch{} }
+  }finally{
+    phase16State_.syncing = false;
+  }
+}
+
+function phase16WrapPhase15Session_(){
+  if(typeof phase15LoadSession_ === 'function' && !phase15LoadSession_._phase16Wrapped){
+    const _origLoad = phase15LoadSession_;
+    phase15LoadSession_ = function(){
+      const sess = _origLoad.apply(this, arguments);
+      if(phase16State_.syncing) return sess;
+      try{
+        const p = phase16GetActiveProfile_();
+        if(p){
+          const role = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(p.role) : p.role;
+          const name = String(p.name || 'ME').trim().slice(0,48) || 'ME';
+          if(sess.role !== role || String(sess.name||'') !== name){ sess.role = role; sess.name = name; }
+        }
+      }catch(err){ console.warn('Phase16 sync-on-load failed', err); }
+      return sess;
+    };
+    phase15LoadSession_._phase16Wrapped = true;
+  }
+  if(typeof phase15SaveSession_ === 'function' && !phase15SaveSession_._phase16Wrapped){
+    const _origSave = phase15SaveSession_;
+    phase15SaveSession_ = function(){
+      const r = _origSave.apply(this, arguments);
+      try{ phase16SyncActiveProfileFromSession_(true); }catch{}
+      return r;
+    };
+    phase15SaveSession_._phase16Wrapped = true;
+  }
+}
+
+function phase16WrapApprovalAuditAttribution_(){
+  if(typeof phase14LogApprovalAction_ === 'function' && !phase14LogApprovalAction_._phase16Wrapped){
+    const _orig = phase14LogApprovalAction_;
+    phase14LogApprovalAction_ = function(ctx, payload){
+      payload = payload || {};
+      try{
+        const sess = (typeof phase15LoadSession_ === 'function') ? phase15LoadSession_() : null;
+        const p = phase16GetActiveProfile_();
+        const who = String(sess && sess.name || p && p.name || 'ME').trim() || 'ME';
+        const role = String(sess && sess.role || p && p.role || 'owner');
+        const pid = String(p && p.id || '');
+        const stamp = `actor:${who} [${role}]${pid ? ' {' + pid + '}' : ''}`;
+        const note = String(payload.note || '');
+        if(!note.includes('actor:')) payload.note = note ? `${note} • ${stamp}` : stamp;
+      }catch{}
+      return _orig.call(this, ctx, payload);
+    };
+    phase14LogApprovalAction_._phase16Wrapped = true;
+  }
+}
+
+function phase16EnsureTopbarButton_(){
+  const top = document.querySelector('.topbar__right');
+  if(!top) return;
+  if(document.querySelector('#phase16BtnTeamProfiles')) return;
+  const btn = document.createElement('button');
+  btn.id = 'phase16BtnTeamProfiles';
+  btn.type = 'button';
+  btn.className = 'btn btn--ghost';
+  btn.textContent = 'Team';
+  btn.title = 'Open Phase 16 team profiles';
+  btn.addEventListener('click', ()=>{
+    openPanelInOwningTab_('#phase16TeamPanel', 'advanced-panels', 30);
+  });
+  const anchor = document.querySelector('#phase15BtnRoles') || document.querySelector('#phase14BtnExportCenter') || top.firstElementChild;
+  top.insertBefore(btn, anchor || null);
+}
+
+function phase16WrapRenderHooks_(){
+  if(typeof phase15PostRenderDashboard_ === 'function' && !phase15PostRenderDashboard_._phase16Wrapped){
+    const _orig = phase15PostRenderDashboard_;
+    phase15PostRenderDashboard_ = function(){ const r = _orig.apply(this, arguments); try{ phase16RenderDashboardPanel_(); }catch(err){ console.warn('Phase16 dashboard panel failed', err); } try{ phase16EnsureTopbarButton_(); }catch{} return r; };
+    phase15PostRenderDashboard_._phase16Wrapped = true;
+  }
+  if(typeof phase15PostRenderChecklist_ === 'function' && !phase15PostRenderChecklist_._phase16Wrapped){
+    const _orig = phase15PostRenderChecklist_;
+    phase15PostRenderChecklist_ = function(){ const r = _orig.apply(this, arguments); try{ phase16RenderChecklistMini_(); }catch(err){ console.warn('Phase16 checklist mini failed', err); } return r; };
+    phase15PostRenderChecklist_._phase16Wrapped = true;
+  }
+  if(typeof phase15PostRenderMilestones_ === 'function' && !phase15PostRenderMilestones_._phase16Wrapped){
+    const _orig = phase15PostRenderMilestones_;
+    phase15PostRenderMilestones_ = function(){ const r = _orig.apply(this, arguments); try{ phase16RenderMilestonesMini_(); }catch(err){ console.warn('Phase16 milestones mini failed', err); } return r; };
+    phase15PostRenderMilestones_._phase16Wrapped = true;
+  }
+}
+
+function phase16RenderDashboardPanel_(){
+  const tab = document.querySelector('#tab-dashboard');
+  if(!tab) return;
+  const cards = Array.from(tab.querySelectorAll('.card'));
+  const host = cards[0] || tab;
+  let box = document.querySelector('#phase16TeamPanel');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase16TeamPanel';
+    box.className = 'phase16-box';
+    const anchor = document.querySelector('#phase15RbacPanel');
+    if(anchor && anchor.parentElement === host) anchor.insertAdjacentElement('afterend', box);
+    else host.appendChild(box);
+  }
+  const store = phase16LoadStore_();
+  const sess = (typeof phase15LoadSession_ === 'function') ? phase15LoadSession_() : { role:'owner', name:'ME' };
+  const active = phase16GetActiveProfile_();
+  const rowsHtml = (store.profiles || []).map(p => {
+    const isActive = active && p.id === active.id;
+    return `
+      <div class="phase16-row ${isActive ? 'is-active' : ''}" data-pid="${escapeHtml(p.id)}">
+        <div>
+          <div class="phase16-row__name">
+            ${escapeHtml(p.name)}
+            <span class="phase16-tag ${escapeHtml(p.role)}">${escapeHtml(typeof phase15RoleLabel_==='function' ? phase15RoleLabel_(p.role) : p.role)}</span>
+            ${isActive ? '<span class="phase16-tag active">ACTIVE</span>' : ''}
+          </div>
+          <div class="phase16-row__meta">id: ${escapeHtml(p.id)} • updated: ${escapeHtml(new Date(Number(p.updatedAt||0)).toLocaleString())}</div>
+        </div>
+        <div class="phase16-toolbar">
+          <button class="btn btn--ghost" type="button" data-act="use">Use</button>
+          <button class="btn btn--ghost" type="button" data-act="edit">Edit</button>
+          <button class="btn btn--ghost" type="button" data-act="clone">Clone</button>
+          <button class="btn btn--ghost" type="button" data-act="del">Delete</button>
+        </div>
+      </div>`;
+  }).join('') || `<div class="phase16-note">No profiles yet.</div>`;
+
+  const auditTail = (typeof phase14LoadAudit_ === 'function') ? (phase14LoadAudit_().slice(0,5) || []) : [];
+  const attributionPreview = auditTail.length
+    ? auditTail.map(a => `• ${new Date(a.ts||Date.now()).toLocaleString()} — ${a.action} — ${String(a.note||'').slice(0,140)}`).join('\n')
+    : 'No approval audit entries yet.';
+
+  box.innerHTML = `
+    <div class="phase16-title">Phase 16 Team Identity & Saved Approver Profiles</div>
+    <div class="phase16-grid">
+      <div class="phase16-card">
+        <div class="phase16-toolbar">
+          <span class="phase16-tag active">Active session</span>
+          <span class="phase16-tag ${escapeHtml(sess.role)}">${escapeHtml(typeof phase15RoleLabel_==='function' ? phase15RoleLabel_(sess.role) : sess.role)}</span>
+          <b>${escapeHtml(sess.name||'ME')}</b>
+          <button class="btn btn--ghost" type="button" id="phase16BtnOpenPhase15Roles">Open Phase 15 Roles</button>
+          <button class="btn btn--ghost" type="button" id="phase16BtnSyncFromSession">Sync Active Profile ← Session</button>
+        </div>
+        <div class="phase16-note" style="margin-top:8px">Profiles are a saved list of approvers. Switching a profile updates the active Phase 15 role + display name so approval actions and lock overrides stay attributed consistently.</div>
+        <div class="phase16-list" id="phase16ProfileList" style="margin-top:8px">${rowsHtml}</div>
+      </div>
+      <div class="phase16-card">
+        <div class="phase16-title" style="margin-bottom:6px">Profile Manager</div>
+        <div class="phase16-fields">
+          <input type="hidden" id="phase16EditProfileId" value="">
+          <div class="row">
+            <label>Name
+              <input id="phase16ProfileName" type="text" maxlength="48" placeholder="e.g. Alex" value="${escapeHtml(active?.name || '')}">
+            </label>
+            <label>Role
+              <select id="phase16ProfileRole">
+                <option value="owner" ${(active?.role||'owner')==='owner'?'selected':''}>Owner</option>
+                <option value="reviewer" ${(active?.role||'')==='reviewer'?'selected':''}>Reviewer</option>
+                <option value="executor" ${(active?.role||'')==='executor'?'selected':''}>Executor</option>
+              </select>
+            </label>
+          </div>
+          <div class="phase16-toolbar">
+            <button class="btn btn--ghost" type="button" id="phase16BtnSaveProfile">Save Profile</button>
+            <button class="btn btn--ghost" type="button" id="phase16BtnNewProfile">New</button>
+            <button class="btn btn--ghost" type="button" id="phase16BtnExportProfiles">Export JSON</button>
+            <button class="btn btn--ghost" type="button" id="phase16BtnImportProfiles">Import JSON</button>
+          </div>
+          <div class="phase16-note">Import supports merge or replace. Active profile is preserved when possible; otherwise first profile becomes active.</div>
+        </div>
+        <div class="phase16-pre">Approval attribution preview (recent Phase 14 audit notes)
+${escapeHtml(attributionPreview)}</div>
+      </div>
+    </div>
+  `;
+
+  box.querySelector('#phase16BtnOpenPhase15Roles')?.addEventListener('click', ()=>{ switchTab('dashboard'); setTimeout(()=>document.querySelector('#phase15RbacPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+  box.querySelector('#phase16BtnSyncFromSession')?.addEventListener('click', ()=>{ phase16SyncActiveProfileFromSession_(false); renderAll(); });
+
+  box.querySelectorAll('#phase16ProfileList .phase16-row').forEach(row => {
+    const pid = row.getAttribute('data-pid');
+    row.querySelector('[data-act="use"]')?.addEventListener('click', ()=> phase16SetActiveProfile_(pid));
+    row.querySelector('[data-act="edit"]')?.addEventListener('click', ()=> phase16LoadProfileIntoForm_(pid));
+    row.querySelector('[data-act="clone"]')?.addEventListener('click', ()=> phase16CloneProfile_(pid));
+    row.querySelector('[data-act="del"]')?.addEventListener('click', ()=> phase16DeleteProfile_(pid));
+  });
+
+  box.querySelector('#phase16BtnNewProfile')?.addEventListener('click', ()=> phase16LoadProfileIntoForm_(null));
+  box.querySelector('#phase16BtnSaveProfile')?.addEventListener('click', phase16SaveProfileFromForm_);
+  box.querySelector('#phase16BtnExportProfiles')?.addEventListener('click', phase16ExportProfiles_);
+  box.querySelector('#phase16BtnImportProfiles')?.addEventListener('click', phase16ImportProfiles_);
+}
+
+function phase16LoadProfileIntoForm_(profileId){
+  const box = document.querySelector('#phase16TeamPanel');
+  if(!box) return;
+  let p = null;
+  if(profileId) p = (phase16Profiles_() || []).find(x => x.id === String(profileId));
+  if(!p){
+    const active = phase16GetActiveProfile_();
+    p = { id:'', name:'', role: active ? active.role : 'owner' };
+  }
+  const idInput = box.querySelector('#phase16EditProfileId');
+  const nameInput = box.querySelector('#phase16ProfileName');
+  const roleSel = box.querySelector('#phase16ProfileRole');
+  if(idInput) idInput.value = p.id || '';
+  if(nameInput){ nameInput.value = p.name || ''; nameInput.focus(); nameInput.select?.(); }
+  if(roleSel) roleSel.value = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(p.role) : String(p.role||'owner');
+}
+function phase16SaveProfileFromForm_(){
+  const box = document.querySelector('#phase16TeamPanel');
+  if(!box) return;
+  const store = phase16LoadStore_();
+  const id = String(box.querySelector('#phase16EditProfileId')?.value || '').trim();
+  const name = String(box.querySelector('#phase16ProfileName')?.value || '').trim().slice(0,48);
+  const role = (typeof phase15NormRole_ === 'function') ? phase15NormRole_(box.querySelector('#phase16ProfileRole')?.value) : 'owner';
+  if(!name) return alert('Profile name is required.');
+  let p = id ? (store.profiles || []).find(x => x.id === id) : null;
+  if(p){
+    p.name = name; p.role = role; p.updatedAt = Date.now();
+    addActivity(`Phase16 updated profile • ${name} (${typeof phase15RoleLabel_==='function'?phase15RoleLabel_(role):role})`);
+  } else {
+    p = phase16NormalizeProfile_({ id:'p16_' + (typeof uid === 'function' ? uid() : String(Date.now())), name, role, createdAt:Date.now(), updatedAt:Date.now() });
+    store.profiles.push(p);
+    addActivity(`Phase16 created profile • ${name} (${typeof phase15RoleLabel_==='function'?phase15RoleLabel_(role):role})`);
+  }
+  phase16SaveStore_();
+  // if editing active profile, keep session in sync immediately
+  if(store.activeProfileId === p.id){ phase16SyncSessionFromActiveProfile_(true); }
+  renderAll();
+}
+async function phase16CloneProfile_(profileId){
+  const src = (phase16Profiles_() || []).find(x => x.id === String(profileId));
+  if(!src) return;
+  const name = await pmPromptDialog_('Clone profile name:', `${src.name} Copy`, { title:'Clone Team Profile', placeholder:'Profile name' });
+  if(name == null) return;
+  const trimmed = String(name || '').trim().slice(0,48);
+  if(!trimmed) return;
+  phase16LoadStore_().profiles.push(phase16NormalizeProfile_({ name: trimmed, role: src.role, createdAt:Date.now(), updatedAt:Date.now() }));
+  phase16SaveStore_();
+  addActivity(`Phase16 cloned profile • ${src.name} → ${trimmed}`);
+  renderAll();
+}
+async function phase16DeleteProfile_(profileId){
+  const s = phase16LoadStore_();
+  const arr = s.profiles || [];
+  const idx = arr.findIndex(x => x.id === String(profileId));
+  if(idx < 0) return;
+  const p = arr[idx];
+  if(arr.length <= 1) return alert('Keep at least one profile.');
+  const okDelete = await pmConfirmDialog_(`Delete profile "${p.name}"?`, { title:'Delete Team Profile', okText:'Delete', danger:true });
+  if(!okDelete) return;
+  arr.splice(idx, 1);
+  if(s.activeProfileId === p.id) s.activeProfileId = (arr[0] && arr[0].id) || '';
+  if(!arr.some(x => x.isDefault) && arr[0]) arr[0].isDefault = true;
+  phase16SaveStore_();
+  phase16SyncSessionFromActiveProfile_(true);
+  addActivity(`Phase16 deleted profile • ${p.name}`);
+  renderAll();
+}
+function phase16ExportProfiles_(){
+  const payload = { version:1, exportedAt:Date.now(), phase:'phase16', teamProfiles: phase16LoadStore_() };
+  const stamp = (typeof phase14DateStamp_ === 'function') ? phase14DateStamp_() : new Date().toISOString().slice(0,10);
+  downloadText(`phase16_team_profiles_${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  addActivity(`Phase16 exported team profiles (${phase16Profiles_().length})`);
+}
+async function phase16ImportProfiles_(){
+  if(typeof pickFileText !== 'function') return alert('Import helper is not available in this build.');
+  pickFileText(async (txt) => {
+    try{
+      const parsed = JSON.parse(txt || '{}');
+      const incoming = (parsed && parsed.teamProfiles && Array.isArray(parsed.teamProfiles.profiles)) ? parsed.teamProfiles : (parsed && Array.isArray(parsed.profiles) ? parsed : null);
+      if(!incoming) return alert('Invalid Phase 16 team profiles JSON.');
+      const mode = await pmPromptDialog_('Import team profiles mode? Type MERGE or REPLACE', 'MERGE', { title:'Import Team Profiles', placeholder:'MERGE or REPLACE' });
+      if(mode == null) return;
+      const replace = String(mode||'MERGE').trim().toUpperCase() === 'REPLACE';
+      const curr = phase16LoadStore_();
+      const incProfiles = (incoming.profiles || []).map(phase16NormalizeProfile_);
+      if(!incProfiles.length) return alert('No profiles found in import.');
+      let nextProfiles = [];
+      let nextActive = String(incoming.activeProfileId || '');
+      if(replace){
+        nextProfiles = incProfiles;
+      } else {
+        const map = new Map((curr.profiles || []).map(p => [p.id, phase16NormalizeProfile_(p)]));
+        // merge by id if same, else by name+role fallback (keeps local ids stable)
+        for(const ip of incProfiles){
+          let target = null;
+          if(map.has(ip.id)) target = map.get(ip.id);
+          if(!target){
+            target = Array.from(map.values()).find(x => x.name === ip.name && x.role === ip.role);
+            if(target) ip.id = target.id;
+          }
+          map.set(ip.id, phase16NormalizeProfile_(ip));
+        }
+        nextProfiles = Array.from(map.values());
+        nextActive = curr.activeProfileId || nextActive;
+      }
+      if(!nextProfiles.length) return alert('Import would leave no profiles.');
+      curr.profiles = nextProfiles;
+      if(!curr.profiles.some(x => x.id === nextActive)) nextActive = curr.profiles[0].id;
+      curr.activeProfileId = nextActive;
+      curr.profiles.forEach(x => x.isDefault = (x.id === curr.activeProfileId));
+      phase16SaveStore_();
+      phase16SyncSessionFromActiveProfile_(true);
+      addActivity(`Phase16 imported team profiles • ${replace ? 'replace' : 'merge'} (${curr.profiles.length} total)`);
+      renderAll();
+    }catch(err){
+      console.warn('Phase16 import profiles failed', err);
+      alert(`Import failed: ${err && err.message ? err.message : err}`);
+    }
+  });
+}
+
+function phase16RenderChecklistMini_(){
+  const host = document.querySelector('#phase15ChecklistRolePanel');
+  if(!host) return;
+  let box = host.querySelector('#phase16ChecklistMini');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase16ChecklistMini';
+    box.className = 'phase16-mini';
+    host.appendChild(box);
+  }
+  const active = phase16GetActiveProfile_();
+  const profiles = phase16Profiles_();
+  box.innerHTML = `
+    <div class="phase16-title" style="margin-bottom:6px">Phase 16 Team Profile</div>
+    <div class="row">
+      <div>
+        <div><b>${escapeHtml(active?.name || 'ME')}</b> <span class="phase16-tag ${escapeHtml(active?.role || 'owner')}">${escapeHtml(typeof phase15RoleLabel_==='function' ? phase15RoleLabel_(active?.role || 'owner') : (active?.role || 'owner'))}</span></div>
+        <div class="sub">Switching profile updates Phase 15 role/session for approval actions and audit attribution.</div>
+      </div>
+      <div class="phase16-toolbar">
+        <select id="phase16ChecklistProfileSelect">${profiles.map(p => `<option value="${escapeHtml(p.id)}" ${active&&p.id===active.id?'selected':''}>${escapeHtml(p.name)} (${escapeHtml(typeof phase15RoleLabel_==='function'?phase15RoleLabel_(p.role):p.role)})</option>`).join('')}</select>
+        <button class="btn btn--ghost" type="button" id="phase16ChecklistBtnUse">Use</button>
+      </div>
+    </div>`;
+  box.querySelector('#phase16ChecklistBtnUse')?.addEventListener('click', ()=>{
+    const id = box.querySelector('#phase16ChecklistProfileSelect')?.value;
+    phase16SetActiveProfile_(id);
+  });
+}
+
+function phase16RenderMilestonesMini_(){
+  const host = document.querySelector('#phase15MilestonePolicyPanel');
+  if(!host) return;
+  let box = host.querySelector('#phase16MilestonesMini');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'phase16MilestonesMini';
+    box.className = 'phase16-mini';
+    host.appendChild(box);
+  }
+  const p = phase16GetActiveProfile_();
+  const canPolicy = (typeof phase15CanAction_ === 'function') ? phase15CanAction_('policy_edit', (typeof phase15CurrentCtx_==='function'?phase15CurrentCtx_():{})) : false;
+  box.innerHTML = `
+    <div class="phase16-title" style="margin-bottom:6px">Phase 16 Approval Attribution</div>
+    <div class="row">
+      <div>
+        <div><b>${escapeHtml(p?.name || 'ME')}</b> <span class="phase16-tag ${escapeHtml(p?.role || 'owner')}">${escapeHtml(typeof phase15RoleLabel_==='function' ? phase15RoleLabel_(p?.role || 'owner') : (p?.role || 'owner'))}</span></div>
+        <div class="sub">Current actor used for approval and lock audit notes${canPolicy ? '. You can edit milestone policy below.' : ' (policy edit blocked for current role).'}</div>
+      </div>
+      <div class="phase16-toolbar"><button class="btn btn--ghost" type="button" id="phase16MilestonesBtnTeam">Open Team Profiles</button></div>
+    </div>`;
+  box.querySelector('#phase16MilestonesBtnTeam')?.addEventListener('click', ()=>{ switchTab('advanced-panels'); setTimeout(()=>document.querySelector('#phase16TeamPanel')?.scrollIntoView({behavior:'smooth', block:'start'}), 30); });
+}
+
+try{ initPhase16_(); }catch(err){ console.warn('Phase16 init failed', err); }
+
+/* ---------------------------
+   Phase 16 UI Cleanup + Panel Grouping + Performance Trim (Polish Patch)
+   - Groups dashboard phase panels into collapsible sections
+   - Reparents Phase 16 Team panel out of base Completion card
+   - Adds content-visibility / containment hints for heavy phase panels
+   - Schedules cleanup in rAF to avoid repeated layout thrash
+---------------------------- */
+var PHASE16_POLISH_KEY = 'stark_pm_phase16_ui_polish_v1';
+var phase16PolishState_ = { inited:false, raf:0, bound:false };
+
+function initPhase16Polish_(){
+  if(phase16PolishState_.inited) return;
+  phase16PolishState_.inited = true;
+  try{ phase16PolishEnsureStyles_(); }catch(err){ console.warn('Phase16 polish styles failed', err); }
+  try{ phase16PolishEnsureWorkspaceTab_(); }catch(err){ console.warn('Phase16 polish workspace tab failed', err); }
+  try{ phase16PolishWrapRenderDashboard_(); }catch(err){ console.warn('Phase16 polish wrap render failed', err); }
+  try{ phase16PolishWrapSwitchTab_(); }catch(err){ console.warn('Phase16 polish wrap tab failed', err); }
+  try{ phase16PolishSchedule_(); }catch{}
+}
+
+function phase16PolishEnsureWorkspaceTab_(){
+  const sidebarNav = document.querySelector('.nav');
+  const dashNavBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="dashboard"]');
+  const dashboardTab = document.querySelector('#tab-dashboard');
+  if(!sidebarNav || !dashboardTab || !dashboardTab.parentElement) return;
+
+  let navBtn = sidebarNav.querySelector('.nav__item[data-tab="advanced-panels"]');
+  if(!navBtn){
+    navBtn = document.createElement('button');
+    navBtn.className = 'nav__item';
+    navBtn.type = 'button';
+    navBtn.dataset.tab = 'advanced-panels';
+    navBtn.innerHTML = '<span class="nav__icon">▦</span><span class="nav__text">Advanced Panels</span>';
+    if(dashNavBtn && dashNavBtn.parentElement) dashNavBtn.insertAdjacentElement('afterend', navBtn);
+    else sidebarNav.appendChild(navBtn);
+  }
+
+  let panel = document.querySelector('#tab-advanced-panels');
+  if(!panel){
+    panel = document.createElement('section');
+    panel.className = 'tab';
+    panel.id = 'tab-advanced-panels';
+    panel.dataset.tab = 'advanced-panels';
+    panel.innerHTML = `
+      <div class="tab__header">
+        <div class="tab__title">Advanced Panels</div>
+        <div class="tab__subtitle">Dedicated workspace for grouped phase panels moved out of Dashboard for cleaner navigation.</div>
+      </div>
+    `;
+    dashboardTab.insertAdjacentElement('afterend', panel);
+  }
+
+  if(ui && Array.isArray(ui.tabs) && !ui.tabs.some(x => x && x.dataset && x.dataset.tab === 'advanced-panels')) ui.tabs.splice(1, 0, navBtn);
+  if(ui && Array.isArray(ui.tabPanels) && !ui.tabPanels.some(x => x && x.dataset && x.dataset.tab === 'advanced-panels')) ui.tabPanels.splice(1, 0, panel);
+
+  if(!navBtn._phase16PolishBound){
+    navBtn.addEventListener('click', () => {
+      switchTab('advanced-panels');
+      setTimeout(()=>{ try{ phase16PolishSchedule_(); }catch{} }, 20);
+    });
+    navBtn._phase16PolishBound = true;
+  }
+
+  try{ phase16PolishEnsureSidebarNavDropdown_(navBtn); }catch(err){ console.warn('Phase16 polish sidebar dropdown failed', err); }
+  try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+}
+
+function phase16PolishEnsureStyles_(){
+  if(document.querySelector('#phase16PolishStyles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase16PolishStyles';
+  st.textContent = `
+    #phase16PolishDashRoot{margin-top:10px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)}
+    #phase16PolishDashRoot .phase16polish-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+    #phase16PolishDashRoot .phase16polish-title{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.9}
+    #phase16PolishDashRoot .phase16polish-sub{font-size:11px;opacity:.78}
+    #phase16PolishDashRoot .phase16polish-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    #phase16PolishDashRoot details.phase16polish-group{border:1px solid rgba(255,255,255,.06);border-radius:12px;background:rgba(255,255,255,.012);overflow:hidden}
+    #phase16PolishDashRoot details.phase16polish-group > summary{cursor:pointer;list-style:none;padding:10px 12px;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:rgba(255,255,255,.01)}
+    #phase16PolishDashRoot details.phase16polish-group > summary::-webkit-details-marker{display:none}
+    #phase16PolishDashRoot .phase16polish-badge{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:1px 7px;font-size:10px;opacity:.9}
+    #phase16PolishDashRoot .phase16polish-body{padding:10px;display:grid;gap:10px}
+    #phase16PolishDashRoot .phase16polish-body > *{margin-top:0 !important}
+    #phase16PolishDashRoot .phase16polish-body > .card{background:rgba(255,255,255,.01)}
+    #phase16PolishDashRoot .phase16polish-body > .phase10-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase11-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase12-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase13-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase14-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase15-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase16-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase8-box,
+    #phase16PolishDashRoot .phase16polish-body > .phase9-box,
+    #phase16PolishDashRoot .phase16polish-body > .card{
+      content-visibility:auto;
+      contain:layout style paint;
+      contain-intrinsic-size: 380px;
+    }
+    #phase16PolishDashRoot .phase16polish-body .phase10-grid,
+    #phase16PolishDashRoot .phase16polish-body .phase11-grid,
+    #phase16PolishDashRoot .phase16polish-body .phase12-grid,
+    #phase16PolishDashRoot .phase16polish-body .phase13-grid{grid-template-columns:1fr}
+    #phase16PolishDashRoot .phase16polish-body .phase16-grid{grid-template-columns:1fr}
+    #phase16PolishDashRoot .phase16polish-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    #phase16PolishDashRoot .phase16polish-catalog{margin:0 0 10px;padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:rgba(255,255,255,.012)}
+    #phase16PolishDashRoot .phase16polish-catalogHead{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    #phase16PolishDashRoot .phase16polish-catalogTitle{font-size:12px;font-weight:700}
+    #phase16PolishDashRoot .phase16polish-catalogSub{font-size:11px;opacity:.75}
+    #phase16PolishDashRoot .phase16polish-catalogTools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    #phase16PolishDashRoot .phase16polish-catalogSelect,
+    #phase16PolishDashRoot .phase16polish-catalogJump{min-width:180px;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);color:inherit}
+    #phase16PolishDashRoot .phase16polish-catalogSearch{min-width:260px;max-width:420px;width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);color:inherit}
+    #phase16PolishDashRoot .phase16polish-catalogJumpWrap{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+    #phase16PolishDashRoot .phase16polish-catalogJump{min-width:300px;max-width:100%;flex:1 1 320px}
+    #phase16PolishDashRoot .phase16polish-catalogHint{font-size:10px;opacity:.72;margin:0 0 8px}
+    #phase16DashboardFocusCard{margin-top:10px}
+    #phase16DashboardFocusCard .phase16polish-focusWrap{display:grid;gap:10px}
+    #phase16DashboardFocusCard .phase16polish-focusTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
+    #phase16DashboardFocusCard .phase16polish-focusTitle{font-weight:700;font-size:13px}
+    #phase16DashboardFocusCard .phase16polish-focusMeta{font-size:11px;opacity:.75;line-height:1.45}
+    #phase16DashboardFocusCard .phase16polish-focusActions{display:flex;gap:6px;flex-wrap:wrap}
+    #phase16DashboardFocusCard .phase16polish-focusStats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    #phase16DashboardFocusCard .phase16polish-focusStat{padding:8px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(255,255,255,.012)}
+    #phase16DashboardFocusCard .phase16polish-focusStat b{display:block;font-size:14px;line-height:1.1}
+    #phase16DashboardFocusCard .phase16polish-focusStat span{display:block;margin-top:3px;font-size:10px;opacity:.72;text-transform:uppercase;letter-spacing:.05em}
+    #phase16DashboardFocusCard .phase16polish-focusHint{font-size:11px;opacity:.78}
+    #phase16DashboardFocusCard .phase16polish-hidden{display:none !important}
+    @media (max-width:1100px){ #phase16DashboardFocusCard .phase16polish-focusStats{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    /* Milestone 3: visual rhythm + typography normalization (Dashboard/Advanced/Portfolio) */
+    #tab-dashboard .card, #tab-advanced-panels .card, #tab-portfolio .card{padding:14px;border-radius:14px}
+    #tab-dashboard .card__top, #tab-advanced-panels .card__top, #tab-portfolio .card__top{gap:8px;margin-bottom:8px}
+    #tab-dashboard .card__label, #tab-advanced-panels .card__label, #tab-portfolio .card__label{font-size:11px;line-height:1.2;letter-spacing:.12em;margin-bottom:8px}
+    #tab-dashboard .card__title, #tab-advanced-panels .card__title, #tab-portfolio .card__title{font-size:13px;line-height:1.25;margin:4px 0 8px}
+    #tab-dashboard .card__hint, #tab-advanced-panels .card__hint, #tab-portfolio .card__hint{font-size:11px;line-height:1.35}
+    #tab-dashboard .card__meta, #tab-advanced-panels .card__meta, #tab-portfolio .card__meta{font-size:11px;line-height:1.45}
+    #tab-dashboard .card__actions, #tab-advanced-panels .card__actions, #tab-portfolio .card__actions{gap:8px;margin-top:10px;flex-wrap:wrap}
+    #tab-dashboard .grid, #tab-advanced-panels .grid{gap:12px}
+    #tab-dashboard .list, #tab-advanced-panels .list{gap:8px}
+    #phase16PolishDashRoot .phase16polish-head{gap:10px;margin-bottom:10px}
+    #phase16PolishDashRoot .phase16polish-sub{line-height:1.4}
+    #phase16PolishDashRoot details.phase16polish-group > summary{padding:12px;font-size:12px;line-height:1.2}
+    #phase16PolishDashRoot .phase16polish-body{padding:12px;gap:12px}
+    #phase16PolishDashRoot .phase16polish-catalog{padding:12px}
+    #phase16PolishDashRoot .phase16polish-catalogHead{margin-bottom:10px}
+    /* Sidebar nav dropdown (requested) */
+    .nav .phase16polish-navDropdown{display:grid;gap:6px;padding:8px 10px;margin:-2px 0 4px 0;border-radius:12px;border:1px solid rgba(56,246,255,.10);background:rgba(10,18,28,.16)}
+    .nav .phase16polish-navDropdown.is-hidden{display:none}
+    .nav .phase16polish-navDropdownLabel{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
+    .nav .phase16polish-navDropdownSelect{width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(56,246,255,.12);background:rgba(10,18,28,.35);color:inherit;font-family:var(--mono);font-size:11px}
+    .nav .phase16polish-navDropdown .btn{width:100%}
+    .nav .phase16polish-navDropdownHint{font-size:10px;opacity:.7;line-height:1.35}
+    /* Revert tab-level dropdown controls (moved to sidebar nav) */
+    #phase16PolishDashRoot #phase16PolishCatalogCategory,
+    #phase16PolishDashRoot .phase16polish-catalogJumpWrap,
+    #phase16PolishDashRoot #phase16PolishCatalogJumpHint{display:none !important}
+    #phase16PolishDashRoot .phase16polish-favs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+    #phase16PolishDashRoot .phase16polish-favs:empty{display:none}
+    #phase16PolishDashRoot .phase16polish-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.02);font-size:11px}
+    #phase16PolishDashRoot .phase16polish-catalogList{display:grid;gap:6px;max-height:280px;overflow:auto;padding-right:2px}
+    #phase16PolishDashRoot .phase16polish-catalogRow{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:8px;border:1px solid rgba(255,255,255,.05);border-radius:10px;background:rgba(255,255,255,.01)}
+    #phase16PolishDashRoot .phase16polish-catalogStar{width:28px;height:28px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.02);color:inherit;cursor:pointer}
+    #phase16PolishDashRoot .phase16polish-catalogStar.is-on{border-color:rgba(255,214,64,.45)}
+    #phase16PolishDashRoot .phase16polish-catalogMain{min-width:0}
+    #phase16PolishDashRoot .phase16polish-catalogName{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #phase16PolishDashRoot .phase16polish-catalogMeta{font-size:10px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #phase16PolishDashRoot .phase16polish-catalogEmpty{font-size:11px;opacity:.72;padding:6px 2px}
+    #phase16PolishDashRoot .phase16polish-targetflash{animation:phase16PolishFlash 1200ms ease}
+    @keyframes phase16PolishFlash{0%{box-shadow:0 0 0 0 rgba(102,178,255,.0)}25%{box-shadow:0 0 0 2px rgba(102,178,255,.45)}100%{box-shadow:0 0 0 0 rgba(102,178,255,.0)}}
+    @media (max-width:1100px){ #phase16PolishDashRoot .phase16polish-grid{grid-template-columns:1fr} }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase16PolishWrapRenderDashboard_(){
+  if(typeof renderDashboard !== 'function' || renderDashboard._phase16PolishWrapped) return;
+  const _orig = renderDashboard;
+  renderDashboard = function(){
+    const r = _orig.apply(this, arguments);
+    try{ phase16PolishSchedule_(); }catch{}
+    return r;
+  };
+  renderDashboard._phase16PolishWrapped = true;
+}
+
+function phase16PolishWrapSwitchTab_(){
+  if(typeof switchTab !== 'function' || switchTab._phase16PolishWrapped) return;
+  const _orig = switchTab;
+  switchTab = function(tabId){
+    const r = _orig.apply(this, arguments);
+    if(['dashboard','advanced-panels'].includes(String(tabId||''))) setTimeout(()=>{ try{ phase16PolishSchedule_(); }catch{} }, 20);
+    return r;
+  };
+  switchTab._phase16PolishWrapped = true;
+}
+
+function phase16PolishSchedule_(){
+  if(typeof requestAnimationFrame !== 'function') return phase16PolishApplyDashboardCleanup_();
+  if(phase16PolishState_.raf){ try{ cancelAnimationFrame(phase16PolishState_.raf); }catch{} }
+  phase16PolishState_.raf = requestAnimationFrame(()=>{
+    phase16PolishState_.raf = 0;
+    try{ phase16PolishApplyDashboardCleanup_(); }catch(err){ console.warn('Phase16 polish cleanup failed', err); }
+  });
+}
+
+function phase16PolishLoadPrefs_(){
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(PHASE16_POLISH_KEY) || '{}') || {}; }catch{ raw = {}; }
+  if(!raw || typeof raw !== 'object') raw = {};
+  if(!raw.catalogFavorites || typeof raw.catalogFavorites !== 'object') raw.catalogFavorites = {};
+  return raw;
+}
+function phase16PolishSavePrefs_(prefs){
+  try{ localStorage.setItem(PHASE16_POLISH_KEY, JSON.stringify(prefs || {})); }catch{}
+}
+function phase16PolishPersistDetails_(root){
+  if(!root || root._phase16PolishBound) return;
+  root._phase16PolishBound = true;
+  root.addEventListener('toggle', (e)=>{
+    const d = e.target;
+    if(!(d && d.matches && d.matches('details.phase16polish-group[data-key]'))) return;
+    const prefs = phase16PolishLoadPrefs_();
+    prefs[d.dataset.key] = !!d.open;
+    phase16PolishSavePrefs_(prefs);
+    const badge = d.querySelector('.phase16polish-badge');
+    const body = d.querySelector('.phase16polish-body');
+    if(badge && body) badge.textContent = String(body.children.length || 0);
+  }, true);
+}
+
+
+function phase16PolishGetCatalogItems_(root){
+  if(!root) return [];
+  const out = [];
+  root.querySelectorAll('details.phase16polish-group').forEach(group => {
+    const body = group.querySelector('.phase16polish-body');
+    if(!body) return;
+    const groupLabel = (group.querySelector('summary > span')?.textContent || group.dataset.key || 'Group').trim();
+    Array.from(body.children || []).forEach((el, idx) => {
+      if(!el || !el.id) return;
+      const rawTitle = (
+        el.getAttribute('data-panel-title') ||
+        el.querySelector('.card__title, .phase16-title, .phase15-title, .phase14-title, .phase13-title, .phase12-title, .phase11-title, .phase10-title, .phase9-title, .phase8-title, h2, h3, h4, .item__title')?.textContent ||
+        el.getAttribute('aria-label') ||
+        el.id
+      );
+      const title = String(rawTitle || el.id).replace(/\s+/g,' ').trim();
+      out.push({ id: el.id, title, groupKey: String(group.dataset.key || ''), groupLabel, index: idx, el });
+    });
+  });
+  return out;
+}
+
+
+function phase16PolishEnsureSidebarNavDropdown_(navBtn){
+  if(!navBtn || !navBtn.parentElement) return null;
+  let wrap = navBtn.parentElement.querySelector('#phase16PolishSidebarNavDropdown');
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.id = 'phase16PolishSidebarNavDropdown';
+    wrap.className = 'phase16polish-navDropdown is-hidden';
+    wrap.innerHTML = `
+      <div class="phase16polish-navDropdownLabel">Advanced Panel Dropdown</div>
+      <select id="phase16PolishSidebarNavSelect" class="phase16polish-navDropdownSelect" title="Advanced panel navigation">
+        <option value="">Loading advanced panels…</option>
+      </select>
+      <button class="btn btn--ghost" type="button" id="phase16PolishSidebarNavOpen">Open Selected Panel</button>
+      <div class="phase16polish-navDropdownHint" id="phase16PolishSidebarNavHint">Categorized dropdown from the Advanced Panels workspace.</div>
+    `;
+    navBtn.insertAdjacentElement('afterend', wrap);
+  }
+  if(!wrap._phase16PolishSidebarBound){
+    const sel = wrap.querySelector('#phase16PolishSidebarNavSelect');
+    const btn = wrap.querySelector('#phase16PolishSidebarNavOpen');
+    const openSelected = ()=>{
+      const panelId = String(sel?.value || '');
+      if(!panelId) return;
+      const root = document.querySelector('#phase16PolishDashRoot');
+      if(root){
+        try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
+      }else{
+        try{ switchTab('advanced-panels'); }catch{}
+        setTimeout(()=>{ try{ phase16PolishSchedule_(); }catch{} }, 30);
+      }
+    };
+    sel?.addEventListener('change', openSelected);
+    btn?.addEventListener('click', openSelected);
+    wrap._phase16PolishSidebarBound = true;
+  }
+  return wrap;
+}
+
+function phase16PolishRenderSidebarNavDropdown_(){
+  const wrap = document.querySelector('#phase16PolishSidebarNavDropdown');
+  if(wrap) wrap.remove();
+}
+
+function phase16PolishBindCatalog_(root){
+  if(!root || root._phase16PolishCatalogBound) return;
+  root._phase16PolishCatalogBound = true;
+  const searchEl = root.querySelector('#phase16PolishCatalogSearch');
+  const clearBtn = root.querySelector('#phase16PolishCatalogClear');
+  const categoryEl = root.querySelector('#phase16PolishCatalogCategory');
+  const jumpEl = root.querySelector('#phase16PolishCatalogJump');
+  const openSelectedBtn = root.querySelector('#phase16PolishCatalogOpenSelected');
+  if(searchEl){
+    searchEl.addEventListener('input', ()=>{ try{ phase16PolishRenderCatalog_(root); }catch{} });
+    searchEl.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape'){
+        searchEl.value = '';
+        try{ phase16PolishRenderCatalog_(root); }catch{}
+      }
+    });
+  }
+  clearBtn?.addEventListener('click', ()=>{
+    if(searchEl) searchEl.value = '';
+    try{ phase16PolishRenderCatalog_(root); }catch{}
+  });
+  categoryEl?.addEventListener('change', ()=>{ try{ phase16PolishRenderCatalog_(root); }catch{} });
+  openSelectedBtn?.addEventListener('click', ()=>{
+    const panelId = String(jumpEl?.value || '');
+    if(panelId) try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
+  });
+  jumpEl?.addEventListener('change', ()=>{
+    const panelId = String(jumpEl.value || '');
+    if(panelId) try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
+  });
+  root.addEventListener('click', (e)=>{
+    const favBtn = e.target && e.target.closest ? e.target.closest('[data-phase16-fav]') : null;
+    if(favBtn){
+      const panelId = String(favBtn.getAttribute('data-phase16-fav') || '');
+      if(!panelId) return;
+      const prefs = phase16PolishLoadPrefs_();
+      prefs.catalogFavorites = prefs.catalogFavorites || {};
+      if(prefs.catalogFavorites[panelId]) delete prefs.catalogFavorites[panelId];
+      else prefs.catalogFavorites[panelId] = 1;
+      phase16PolishSavePrefs_(prefs);
+      try{ phase16PolishRenderCatalog_(root); }catch{}
+      return;
+    }
+    const openBtn = e.target && e.target.closest ? e.target.closest('[data-phase16-open]') : null;
+    if(openBtn){
+      const panelId = String(openBtn.getAttribute('data-phase16-open') || '');
+      if(panelId) try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
+      return;
+    }
+    const chipBtn = e.target && e.target.closest ? e.target.closest('[data-phase16-openchip]') : null;
+    if(chipBtn){
+      const panelId = String(chipBtn.getAttribute('data-phase16-openchip') || '');
+      if(panelId) try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
+    }
+  });
+}
+
+function phase16PolishOpenCatalogItem_(root, panelId){
+  const target = document.querySelector('#'+panelId);
+  if(!target) return;
+  const group = target.closest('details.phase16polish-group');
+  if(group) group.open = true;
+  try{ switchTab('advanced-panels'); }catch{}
+  setTimeout(()=>{
+    try{ target.classList.add('phase16polish-targetflash'); }catch{}
+    try{ target.scrollIntoView({ behavior:'smooth', block:'start' }); }catch{}
+    setTimeout(()=>{ try{ target.classList.remove('phase16polish-targetflash'); }catch{} }, 1300);
+  }, 30);
+}
+
+
+function phase16PolishApplyCategoryFilter_(root, categoryKey){
+  if(!root) return;
+  const selected = String(categoryKey || 'all');
+  root.querySelectorAll('details.phase16polish-group').forEach(d => {
+    const body = d.querySelector('.phase16polish-body');
+    const count = body ? body.children.length : 0;
+    const matches = (selected === 'all') || (String(d.dataset.key || '') === selected);
+    d.style.display = (count && matches) ? '' : 'none';
+  });
+}
+
+function phase16PolishRenderCatalog_(root){
+  if(!root) return;
+  const listEl = root.querySelector('#phase16PolishCatalogList');
+  const favsEl = root.querySelector('#phase16PolishCatalogFavs');
+  const searchEl = root.querySelector('#phase16PolishCatalogSearch');
+  const categoryEl = root.querySelector('#phase16PolishCatalogCategory');
+  const jumpEl = root.querySelector('#phase16PolishCatalogJump');
+  const jumpHintEl = root.querySelector('#phase16PolishCatalogJumpHint');
+  if(!listEl || !favsEl) return;
+
+  const q = String(searchEl?.value || '').trim().toLowerCase();
+  const selectedCategory = String(categoryEl?.value || 'all');
+  const prefs = phase16PolishLoadPrefs_();
+  const favMap = (prefs && prefs.catalogFavorites && typeof prefs.catalogFavorites === 'object') ? prefs.catalogFavorites : {};
+  const items = phase16PolishGetCatalogItems_(root)
+    .sort((a,b)=>{
+      const af = favMap[a.id] ? 1 : 0;
+      const bf = favMap[b.id] ? 1 : 0;
+      if(af !== bf) return bf - af;
+      if(a.groupLabel !== b.groupLabel) return a.groupLabel.localeCompare(b.groupLabel);
+      return a.index - b.index;
+    });
+
+  const categoryFiltered = selectedCategory === 'all' ? items : items.filter(it => String(it.groupKey || '') === selectedCategory);
+  const filtered = q ? categoryFiltered.filter(it => (`${it.title} ${it.groupLabel} ${it.id}`).toLowerCase().includes(q)) : categoryFiltered;
+  const favoriteItems = items.filter(it => !!favMap[it.id]);
+
+  favsEl.innerHTML = favoriteItems.map(it => `
+    <button type="button" class="phase16polish-chip" data-phase16-openchip="${escapeHtml(it.id)}" title="Open ${escapeHtml(it.title)}">
+      <span>★</span><span>${escapeHtml(it.title)}</span>
+    </button>
+  `).join('');
+
+  if(jumpEl){
+    const jumpSource = filtered.length ? filtered : categoryFiltered;
+    const prevJump = String(jumpEl.value || '');
+    const grouped = new Map();
+    jumpSource.forEach(it => {
+      const k = String(it.groupLabel || 'Other');
+      if(!grouped.has(k)) grouped.set(k, []);
+      grouped.get(k).push(it);
+    });
+    let optionsHtml = '<option value="">Select a panel from dropdown…</option>';
+    Array.from(grouped.entries()).forEach(([groupLabel, arr]) => {
+      optionsHtml += `<optgroup label="${escapeHtml(groupLabel)}">` + arr.map(it => `<option value="${escapeHtml(it.id)}">${escapeHtml(it.title)} (#${escapeHtml(it.id)})</option>`).join('') + `</optgroup>`;
+    });
+    jumpEl.innerHTML = optionsHtml;
+    if(prevJump && Array.from(jumpEl.options || []).some(opt => String(opt.value || '') === prevJump)) jumpEl.value = prevJump;
+    if(jumpHintEl){
+      const total = jumpSource.length;
+      const catLabel = selectedCategory === 'all' ? 'all categories' : selectedCategory;
+      jumpHintEl.textContent = total ? `Dropdown shows ${total} panel${total===1?'':'s'} (${catLabel}${q ? ', search filtered' : ''}).` : `No panels available for ${catLabel}${q ? ' with current search' : ''}.`;
+    }
+  }
+  try{ phase16PolishApplyCategoryFilter_(root, selectedCategory); }catch{}
+
+  if(!filtered.length){
+    listEl.innerHTML = '<div class="phase16polish-catalogEmpty">No panels match the current category / search filter.</div>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(it => {
+    const isFav = !!favMap[it.id];
+    return `
+      <div class="phase16polish-catalogRow" data-panel-id="${escapeHtml(it.id)}">
+        <button type="button" class="phase16polish-catalogStar ${isFav ? 'is-on' : ''}" data-phase16-fav="${escapeHtml(it.id)}" title="${isFav ? 'Remove favorite' : 'Add favorite'}">${isFav ? '★' : '☆'}</button>
+        <div class="phase16polish-catalogMain">
+          <div class="phase16polish-catalogName">${escapeHtml(it.title)}</div>
+          <div class="phase16polish-catalogMeta">${escapeHtml(it.groupLabel)} • #${escapeHtml(it.id)}</div>
+        </div>
+        <span class="badge">${escapeHtml(it.groupKey.toUpperCase() || 'GROUP')}</span>
+        <button type="button" class="btn btn--ghost" data-phase16-open="${escapeHtml(it.id)}">Open</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function phase16PolishEnsureDashboardRoot_(tab){
+  const mountTab = document.querySelector('#tab-advanced-panels') || tab;
+  let root = mountTab.querySelector('#phase16PolishDashRoot');
+  if(!root){
+    root = document.createElement('div');
+    root.id = 'phase16PolishDashRoot';
+    root.innerHTML = `
+      <div class="phase16polish-head">
+        <div>
+          <div class="phase16polish-title">Advanced Panels Workspace</div>
+          <div class="phase16polish-sub">Grouped phase panels for cleaner navigation. Completion / Active Project / Hotlist cards stay compact above.</div>
+        </div>
+        <div class="phase16polish-actions">
+          <button class="btn btn--ghost" type="button" id="phase16PolishBtnExpandAll">Expand All</button>
+          <button class="btn btn--ghost" type="button" id="phase16PolishBtnCollapseAll">Collapse All</button>
+        </div>
+      </div>
+      <div class="phase16polish-catalog">
+        <div class="phase16polish-catalogHead">
+          <div>
+            <div class="phase16polish-catalogTitle">Workspace Catalog & Favorites</div>
+            <div class="phase16polish-catalogSub">Search advanced panels, open them quickly, and pin favorites for one-click access.</div>
+          </div>
+        </div>
+        <div class="phase16polish-catalogTools">
+          <select class="phase16polish-catalogSelect" id="phase16PolishCatalogCategory" title="Filter by category">
+            <option value="all">All Categories</option>
+            <option value="ops">Ops & Alerts</option>
+            <option value="automation">Automation & Review</option>
+            <option value="approval">Approvals & Team</option>
+            <option value="reports">Reports & Export Tools</option>
+          </select>
+          <input class="phase16polish-catalogSearch" type="search" id="phase16PolishCatalogSearch" placeholder="Search panel name, group, or panel id..." />
+          <button class="btn btn--ghost" type="button" id="phase16PolishCatalogClear">Clear</button>
+        </div>
+        <div class="phase16polish-catalogJumpWrap">
+          <select class="phase16polish-catalogJump" id="phase16PolishCatalogJump" title="Open panel from dropdown">
+            <option value="">Select a panel from dropdown…</option>
+          </select>
+          <button class="btn btn--ghost" type="button" id="phase16PolishCatalogOpenSelected">Open Selected</button>
+        </div>
+        <div class="phase16polish-catalogHint" id="phase16PolishCatalogJumpHint">Choose a category or search to narrow panels.</div>
+        <div class="phase16polish-favs" id="phase16PolishCatalogFavs"></div>
+        <div class="phase16polish-catalogList" id="phase16PolishCatalogList"></div>
+      </div>
+      <div class="phase16polish-grid">
+        <details class="phase16polish-group" data-key="ops" open>
+          <summary><span>Ops & Alerts</span><span class="phase16polish-badge">0</span></summary>
+          <div class="phase16polish-body" id="phase16PolishGroupOps"></div>
+        </details>
+        <details class="phase16polish-group" data-key="automation" open>
+          <summary><span>Automation & Review</span><span class="phase16polish-badge">0</span></summary>
+          <div class="phase16polish-body" id="phase16PolishGroupAutomation"></div>
+        </details>
+        <details class="phase16polish-group" data-key="approval" open>
+          <summary><span>Approvals & Team</span><span class="phase16polish-badge">0</span></summary>
+          <div class="phase16polish-body" id="phase16PolishGroupApproval"></div>
+        </details>
+        <details class="phase16polish-group" data-key="reports">
+          <summary><span>Reports & Export Tools</span><span class="phase16polish-badge">0</span></summary>
+          <div class="phase16polish-body" id="phase16PolishGroupReports"></div>
+        </details>
+      </div>
+    `;
+    const directKids = Array.from(mountTab.children || []);
+    const firstPhaseHost = directKids.find(el => el && el.id && /^phase(8|9|10|11|12|13|14|15|16)/.test(el.id));
+    if(firstPhaseHost) mountTab.insertBefore(root, firstPhaseHost);
+    else mountTab.appendChild(root);
+    root.querySelector('#phase16PolishBtnExpandAll')?.addEventListener('click', ()=>{
+      root.querySelectorAll('details.phase16polish-group').forEach(d => d.open = true);
+    });
+    root.querySelector('#phase16PolishBtnCollapseAll')?.addEventListener('click', ()=>{
+      root.querySelectorAll('details.phase16polish-group').forEach(d => d.open = false);
+    });
+  }
+  const prefs = phase16PolishLoadPrefs_();
+  root.querySelectorAll('details.phase16polish-group[data-key]').forEach(d => {
+    if(Object.prototype.hasOwnProperty.call(prefs, d.dataset.key)) d.open = !!prefs[d.dataset.key];
+  });
+  phase16PolishPersistDetails_(root);
+  phase16PolishBindCatalog_(root);
+  return root;
+}
+
+function phase16PolishAppendIfNeeded_(el, target){
+  if(!el || !target) return;
+  if(el === target || target.contains(el)) return;
+  target.appendChild(el);
+}
+
+function phase16PolishEnsureDashboardFocusCard_(dashboardTab, root){
+  if(!dashboardTab) return;
+  const hostGrid = dashboardTab.querySelector('.grid.grid--2');
+  if(!hostGrid) return;
+  let card = dashboardTab.querySelector('#phase16DashboardFocusCard');
+  if(!card){
+    card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'phase16DashboardFocusCard';
+    hostGrid.insertBefore(card, hostGrid.firstElementChild || null);
+  }
+
+  const countIn = (sel) => {
+    const body = root ? root.querySelector(sel) : null;
+    return body ? Array.from(body.children || []).filter(x => x && x.id).length : 0;
+  };
+  const opsCount = countIn('#phase16PolishGroupOps');
+  const autoCount = countIn('#phase16PolishGroupAutomation');
+  const approvalCount = countIn('#phase16PolishGroupApproval');
+  const reportCount = countIn('#phase16PolishGroupReports');
+  const total = opsCount + autoCount + approvalCount + reportCount;
+  const hasPortfolio = !!document.querySelector('.nav .nav__item[data-tab="portfolio"]');
+
+  card.innerHTML = `
+    <div class="card__top">
+      <div>
+        <div class="card__label">Dashboard Focus Mode</div>
+        <div class="phase16polish-focusTitle">Core signal stays here, advanced tools are grouped separately.</div>
+        <div class="phase16polish-focusMeta">Completion, Active Project, Hotlist, Milestones, and Recent Activity remain on Dashboard. Workload, capacity, automation, approvals, and export/report panels are routed to Advanced Panels.</div>
+      </div>
+      <div class="phase16polish-focusActions">
+        <button class="btn btn--ghost" type="button" id="phase16DashboardFocusOpenAdvanced">Open Advanced Panels</button>
+        <button class="btn btn--ghost ${hasPortfolio ? '' : 'phase16polish-hidden'}" type="button" id="phase16DashboardFocusOpenPortfolio">Open Portfolio</button>
+      </div>
+    </div>
+    <div class="phase16polish-focusWrap">
+      <div class="phase16polish-focusStats">
+        <div class="phase16polish-focusStat"><b>${total}</b><span>Advanced Panels</span></div>
+        <div class="phase16polish-focusStat"><b>${opsCount}</b><span>Ops & Alerts</span></div>
+        <div class="phase16polish-focusStat"><b>${autoCount + approvalCount}</b><span>Automation + Team</span></div>
+        <div class="phase16polish-focusStat"><b>${reportCount}</b><span>Reports / Export</span></div>
+      </div>
+      <div class="phase16polish-focusHint">Tip: use the Tools menu (topbar) for quick actions, and Advanced Panels for heavier workflows.</div>
+    </div>
+  `;
+
+  const btnAdv = card.querySelector('#phase16DashboardFocusOpenAdvanced');
+  const btnPortfolio = card.querySelector('#phase16DashboardFocusOpenPortfolio');
+  if(btnAdv && !btnAdv._phase16FocusBound){
+    btnAdv.addEventListener('click', ()=>{
+      try{ switchTab('advanced-panels'); }catch{}
+      setTimeout(()=>{ try{ phase16PolishSchedule_(); }catch{} }, 30);
+    });
+    btnAdv._phase16FocusBound = true;
+  }
+  if(btnPortfolio && !btnPortfolio._phase16FocusBound){
+    btnPortfolio.addEventListener('click', ()=>{ try{ switchTab('portfolio'); }catch{} });
+    btnPortfolio._phase16FocusBound = true;
+  }
+}
+
+function phase16PolishApplyDashboardCleanup_(){
+  const dashboardTab = document.querySelector('#tab-dashboard');
+  const advancedTab = document.querySelector('#tab-advanced-panels');
+  const hostTab = advancedTab || dashboardTab;
+  if(!hostTab) return;
+  const root = phase16PolishEnsureDashboardRoot_(hostTab);
+  const gOps = root.querySelector('#phase16PolishGroupOps');
+  const gAuto = root.querySelector('#phase16PolishGroupAutomation');
+  const gApproval = root.querySelector('#phase16PolishGroupApproval');
+  const gReports = root.querySelector('#phase16PolishGroupReports');
+  if(!gOps || !gAuto || !gApproval || !gReports) return;
+
+  // Move known dashboard phase hosts into grouped workspace.
+  const groups = {
+    ops: ['phase6DashWorkload','phase7CapacityPanel','phase8DashboardHost','phase9DashboardHost','phase11DashboardHost','phase12DashboardHost'],
+    automation: ['phase10DashboardHost','phase13DashboardHost'],
+    approval: ['phase14ApprovalQueuePanel','phase15RbacPanel','phase16TeamPanel'],
+    reports: []
+  };
+  groups.ops.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gOps));
+  groups.automation.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gAuto));
+  groups.approval.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gApproval));
+
+  // If team panel was incorrectly mounted inside base Completion card, force it into Approvals & Team group.
+  const teamPanel = document.querySelector('#phase16TeamPanel');
+  if(teamPanel) phase16PolishAppendIfNeeded_(teamPanel, gApproval);
+
+  const sourceTabs = [dashboardTab, advancedTab].filter(Boolean);
+
+  // Move any remaining direct-child phase hosts into reports/misc group so workspace stays tidy.
+  sourceTabs.forEach(tab => {
+    Array.from(tab.children || []).forEach(el => {
+      if(!el || el === root) return;
+      const id = String(el.id || '');
+      if(!/^phase(6|7|8|9|10|11|12|13|14|15|16)/.test(id)) return;
+      if(root.contains(el)) return;
+      phase16PolishAppendIfNeeded_(el, gReports);
+    });
+  });
+
+  // Also catch phase panels nested inside base cards (common additive patch placement issue).
+  sourceTabs.forEach(tab => {
+    Array.from(tab.querySelectorAll('.card > [id^="phase"]')).forEach(el => {
+      if(root.contains(el)) return;
+      const id = String(el.id || '');
+      if(id === 'phase16TeamPanel' || id === 'phase15RbacPanel' || id === 'phase14ApprovalQueuePanel') phase16PolishAppendIfNeeded_(el, gApproval);
+      else if(id === 'phase10DashboardHost' || id === 'phase13DashboardHost') phase16PolishAppendIfNeeded_(el, gAuto);
+      else if(/^phase(6|7)/.test(id)) phase16PolishAppendIfNeeded_(el, gOps);
+      else phase16PolishAppendIfNeeded_(el, gOps);
+    });
+  });
+
+  // Keep badge counts current and hide empty groups.
+  root.querySelectorAll('details.phase16polish-group').forEach(d => {
+    const body = d.querySelector('.phase16polish-body');
+    const badge = d.querySelector('.phase16polish-badge');
+    const count = body ? body.children.length : 0;
+    if(badge) badge.textContent = String(count);
+    d.style.display = count ? '' : 'none';
+  });
+  try{ phase16PolishEnsureDashboardFocusCard_(dashboardTab, root); }catch(err){ console.warn('Phase16 dashboard focus card failed', err); }
+  try{ phase16PolishRenderCatalog_(root); }catch{}
+  try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+}
+
+try{ initPhase16Polish_(); }catch(err){ console.warn('Phase16 polish init failed', err); }
+
+
+/* ---------------------------
+   Phase 17 — Portfolio / Multi-Project Command View
+---------------------------- */
+const PHASE17_PORTFOLIO_KEY = "stark_pm_phase17_portfolio_v1";
+const phase17PortfolioState_ = {
+  inited: false,
+  renderWrapped: false,
+  switchWrapped: false,
+  bound: false,
+  query: "",
+  status: "all",
+  sort: "risk",
+};
+
+function initPhase17Portfolio_(){
+  if(phase17PortfolioState_.inited) return;
+  phase17PortfolioState_.inited = true;
+  try{ phase17PortfolioLoadUiState_(); }catch{}
+  try{ phase17PortfolioEnsureStyles_(); }catch(err){ console.warn('Phase17 portfolio styles failed', err); }
+  try{ phase17PortfolioEnsureTab_(); }catch(err){ console.warn('Phase17 portfolio tab failed', err); }
+  try{ phase17PortfolioWrapRenderAll_(); }catch(err){ console.warn('Phase17 portfolio render wrap failed', err); }
+  try{ phase17PortfolioWrapSwitchTab_(); }catch(err){ console.warn('Phase17 portfolio tab wrap failed', err); }
+  try{ phase17PortfolioScheduleRender_(); }catch{}
+}
+
+function phase17PortfolioLoadUiState_(){
+  let raw = {};
+  try{ raw = JSON.parse(localStorage.getItem(PHASE17_PORTFOLIO_KEY) || '{}') || {}; }catch{ raw = {}; }
+  if(!raw || typeof raw !== 'object') raw = {};
+  phase17PortfolioState_.query = String(raw.query || '');
+  phase17PortfolioState_.status = String(raw.status || 'all');
+  phase17PortfolioState_.sort = String(raw.sort || 'risk');
+}
+
+function phase17PortfolioSaveUiState_(){
+  try{
+    localStorage.setItem(PHASE17_PORTFOLIO_KEY, JSON.stringify({
+      query: String(phase17PortfolioState_.query || ''),
+      status: String(phase17PortfolioState_.status || 'all'),
+      sort: String(phase17PortfolioState_.sort || 'risk'),
+    }));
+  }catch{}
+}
+
+function phase17PortfolioEnsureStyles_(){
+  if(document.querySelector('#phase17PortfolioStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'phase17PortfolioStyles';
+  style.textContent = `
+    #tab-portfolio .phase17-portfolio-wrap{display:grid;gap:12px}
+    #tab-portfolio .phase17-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    #tab-portfolio .phase17-kpi{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(255,255,255,.015)}
+    #tab-portfolio .phase17-kpi__label{font-size:11px;opacity:.72;letter-spacing:.06em;text-transform:uppercase}
+    #tab-portfolio .phase17-kpi__value{margin-top:4px;font-size:20px;font-weight:700;line-height:1.1}
+    #tab-portfolio .phase17-kpi__sub{margin-top:4px;font-size:11px;opacity:.72}
+    #tab-portfolio .phase17-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:8px;align-items:end}
+    #tab-portfolio .phase17-controls .field{margin:0}
+    #tab-portfolio .phase17-input,#tab-portfolio .phase17-select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);color:inherit}
+    #tab-portfolio .phase17-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,.9fr);gap:12px;align-items:start}
+    #tab-portfolio .phase17-list{display:grid;gap:8px;max-height:65vh;overflow:auto;padding-right:2px}
+    #tab-portfolio .phase17-row{display:grid;grid-template-columns:minmax(170px,1.25fr) auto auto auto auto auto auto;gap:8px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:rgba(255,255,255,.012)}
+    #tab-portfolio .phase17-row.is-active{border-color:rgba(102,178,255,.28);box-shadow:0 0 0 1px rgba(102,178,255,.16) inset}
+    #tab-portfolio .phase17-rowHead{display:flex;flex-direction:column;min-width:0}
+    #tab-portfolio .phase17-rowTitle{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #tab-portfolio .phase17-rowMeta{font-size:11px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #tab-portfolio .phase17-rowStat{display:flex;flex-direction:column;align-items:flex-end;min-width:72px}
+    #tab-portfolio .phase17-rowStat b{font-size:13px;line-height:1.1}
+    #tab-portfolio .phase17-rowStat span{font-size:10px;opacity:.72;text-transform:uppercase;letter-spacing:.05em}
+    #tab-portfolio .phase17-risk{font-weight:700}
+    #tab-portfolio .phase17-risk.is-good{color:var(--ok)}
+    #tab-portfolio .phase17-risk.is-mid{color:var(--warn)}
+    #tab-portfolio .phase17-risk.is-bad{color:var(--danger)}
+    #tab-portfolio .phase17-pillset{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+    #tab-portfolio .phase17-pill{font-size:10px;padding:3px 6px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.02)}
+    #tab-portfolio .phase17-bar{width:100%;height:6px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;margin-top:6px}
+    #tab-portfolio .phase17-bar > i{display:block;height:100%;background:linear-gradient(90deg, rgba(102,178,255,.55), rgba(102,178,255,.95));width:0%}
+    #tab-portfolio .phase17-sideCard{display:grid;gap:8px}
+    #tab-portfolio .phase17-sideList{display:grid;gap:8px}
+    #tab-portfolio .phase17-sideItem{padding:8px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(255,255,255,.01)}
+    #tab-portfolio .phase17-sideItemTitle{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #tab-portfolio .phase17-sideItemMeta{font-size:10px;opacity:.72;margin-top:3px}
+    #tab-portfolio .phase17-sideItemRow{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:6px}
+    #tab-portfolio .phase17-empty{padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;font-size:12px;opacity:.8}
+    #tab-portfolio .phase17-rowActions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+    #tab-portfolio .phase17-btn{padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.02);color:inherit;cursor:pointer;font-size:11px}
+    #tab-portfolio .phase17-btn:hover{background:rgba(255,255,255,.05)}
+    /* Milestone 3: portfolio rhythm alignment */
+    #tab-portfolio .phase17-portfolio-wrap{gap:14px}
+    #tab-portfolio .phase17-summary{gap:12px}
+    #tab-portfolio .phase17-kpi{padding:12px;border-radius:14px}
+    #tab-portfolio .phase17-kpi__label{font-size:10px;line-height:1.2}
+    #tab-portfolio .phase17-kpi__value{margin-top:6px;font-size:18px;line-height:1.15}
+    #tab-portfolio .phase17-kpi__sub{font-size:11px;line-height:1.35}
+    #tab-portfolio .phase17-controls{gap:10px}
+    #tab-portfolio .phase17-grid{gap:14px}
+    #tab-portfolio .phase17-list{gap:10px}
+    #tab-portfolio .phase17-row{gap:10px;padding:12px;border-radius:14px}
+    #tab-portfolio .phase17-rowTitle{font-size:13px;line-height:1.25}
+    #tab-portfolio .phase17-rowMeta{font-size:11px;line-height:1.35}
+    #tab-portfolio .phase17-rowStat b{font-size:12px}
+    #tab-portfolio .phase17-sideCard, #tab-portfolio .phase17-sideList{gap:10px}
+    #tab-portfolio .phase17-sideItem{padding:10px;border-radius:12px}
+    #tab-portfolio .phase17-sideItemMeta{font-size:11px;line-height:1.35}
+    #tab-portfolio .phase17-btn{padding:6px 10px;border-radius:9px}
+    @media (max-width:1300px){ #tab-portfolio .phase17-row{grid-template-columns:minmax(170px,1.2fr) auto auto auto auto auto; } #tab-portfolio .phase17-rowActions{grid-column:1/-1;justify-content:flex-start;} }
+    @media (max-width:1100px){ #tab-portfolio .phase17-summary{grid-template-columns:repeat(2,minmax(0,1fr));} #tab-portfolio .phase17-controls{grid-template-columns:1fr 1fr;align-items:end} #tab-portfolio .phase17-grid{grid-template-columns:1fr} #tab-portfolio .phase17-row{grid-template-columns:1fr 1fr;align-items:start} #tab-portfolio .phase17-rowStat{align-items:flex-start} #tab-portfolio .phase17-pillset{justify-content:flex-start} }
+  `;
+  document.head.appendChild(style);
+}
+
+function phase17PortfolioEnsureTab_(){
+  const sidebarNav = document.querySelector('.nav');
+  const dashBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="dashboard"]');
+  const advBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="advanced-panels"]');
+  const dashboardTab = document.querySelector('#tab-dashboard');
+  if(!sidebarNav || !dashboardTab || !dashboardTab.parentElement) return;
+
+  let navBtn = sidebarNav.querySelector('.nav__item[data-tab="portfolio"]');
+  if(!navBtn){
+    navBtn = document.createElement('button');
+    navBtn.type = 'button';
+    navBtn.className = 'nav__item';
+    navBtn.dataset.tab = 'portfolio';
+    navBtn.innerHTML = '<span class="nav__icon">▤</span><span class="nav__text">Portfolio</span>';
+    if(advBtn && advBtn.parentElement) advBtn.insertAdjacentElement('beforebegin', navBtn);
+    else if(dashBtn && dashBtn.parentElement) dashBtn.insertAdjacentElement('afterend', navBtn);
+    else sidebarNav.appendChild(navBtn);
+  }
+
+  let panel = document.querySelector('#tab-portfolio');
+  if(!panel){
+    panel = document.createElement('section');
+    panel.className = 'tab';
+    panel.id = 'tab-portfolio';
+    panel.dataset.tab = 'portfolio';
+    panel.innerHTML = `
+      <div class="tab__header">
+        <div class="tab__title">Portfolio</div>
+        <div class="tab__subtitle">Multi-project command view: health, risk, workload, and quick navigation across projects.</div>
+      </div>
+      <div id="phase17PortfolioRoot"></div>
+    `;
+    const advPanel = document.querySelector('#tab-advanced-panels');
+    if(advPanel && advPanel.parentElement) advPanel.insertAdjacentElement('beforebegin', panel);
+    else dashboardTab.insertAdjacentElement('afterend', panel);
+  }
+
+  if(ui && Array.isArray(ui.tabs) && !ui.tabs.some(x => x && x.dataset && x.dataset.tab === 'portfolio')){
+    let insertIndex = ui.tabs.findIndex(x => x && x.dataset && x.dataset.tab === 'advanced-panels');
+    if(insertIndex < 0) insertIndex = 1;
+    ui.tabs.splice(insertIndex, 0, navBtn);
+  }
+  if(ui && Array.isArray(ui.tabPanels) && !ui.tabPanels.some(x => x && x.dataset && x.dataset.tab === 'portfolio')){
+    let insertIndex = ui.tabPanels.findIndex(x => x && x.dataset && x.dataset.tab === 'advanced-panels');
+    if(insertIndex < 0) insertIndex = 1;
+    ui.tabPanels.splice(insertIndex, 0, panel);
+  }
+
+  if(!navBtn._phase17PortfolioBound){
+    navBtn.addEventListener('click', ()=> switchTab('portfolio'));
+    navBtn._phase17PortfolioBound = true;
+  }
+
+  if(!phase17PortfolioState_.bound){
+    panel.addEventListener('input', (e)=> phase17PortfolioHandleUiInput_(e));
+    panel.addEventListener('change', (e)=> phase17PortfolioHandleUiInput_(e));
+    panel.addEventListener('click', (e)=> phase17PortfolioHandleClick_(e));
+    phase17PortfolioState_.bound = true;
+  }
+}
+
+function phase17PortfolioHandleUiInput_(e){
+  const t = e && e.target;
+  if(!t || !t.id) return;
+  if(t.id === 'phase17PortfolioSearch') phase17PortfolioState_.query = String(t.value || '');
+  if(t.id === 'phase17PortfolioStatus') phase17PortfolioState_.status = String(t.value || 'all');
+  if(t.id === 'phase17PortfolioSort') phase17PortfolioState_.sort = String(t.value || 'risk');
+  phase17PortfolioSaveUiState_();
+  phase17PortfolioRender_();
+}
+
+function phase17PortfolioHandleClick_(e){
+  const btn = e && e.target && e.target.closest ? e.target.closest('[data-phase17-action]') : null;
+  if(!btn) return;
+  const action = String(btn.getAttribute('data-phase17-action') || '');
+  const projectId = String(btn.getAttribute('data-project-id') || '');
+  if(!projectId) return;
+  if(action === 'focus'){
+    try{ setActiveProject(projectId); }catch{}
+    try{ switchTab('dashboard'); }catch{}
+    return;
+  }
+  if(action === 'open-project'){
+    try{ setActiveProject(projectId); }catch{}
+    try{ switchTab('projects'); }catch{}
+    return;
+  }
+  if(action === 'open-checklist'){
+    try{ setActiveProject(projectId); }catch{}
+    try{ switchTab('checklist'); }catch{}
+    return;
+  }
+}
+
+function phase17PortfolioWrapRenderAll_(){
+  if(phase17PortfolioState_.renderWrapped) return;
+  if(typeof renderAll !== 'function') return;
+  const _orig = renderAll;
+  renderAll = function(){
+    const r = _orig.apply(this, arguments);
+    try{ phase17PortfolioRender_(); }catch{}
+    return r;
+  };
+  phase17PortfolioState_.renderWrapped = true;
+}
+
+function phase17PortfolioWrapSwitchTab_(){
+  if(phase17PortfolioState_.switchWrapped) return;
+  if(typeof switchTab !== 'function') return;
+  const _orig = switchTab;
+  switchTab = function(tabId){
+    const r = _orig.apply(this, arguments);
+    if(String(tabId||'') === 'portfolio') setTimeout(()=>{ try{ phase17PortfolioRender_(); }catch{} }, 25);
+    return r;
+  };
+  phase17PortfolioState_.switchWrapped = true;
+}
+
+function phase17PortfolioScheduleRender_(){
+  setTimeout(()=>{ try{ phase17PortfolioEnsureTab_(); phase17PortfolioRender_(); }catch{} }, 40);
+}
+
+function phase17PortfolioFmtDate_(ts){
+  const n = Number(ts || 0);
+  if(!Number.isFinite(n) || n <= 0) return '—';
+  try{ return new Date(n).toLocaleDateString([], { year:'numeric', month:'short', day:'2-digit' }); }catch{ return '—'; }
+}
+
+function phase17PortfolioRiskClass_(score){
+  if(score >= 75) return 'is-good';
+  if(score >= 45) return 'is-mid';
+  return 'is-bad';
+}
+
+function phase17PortfolioRiskLabel_(score){
+  if(score >= 75) return 'Healthy';
+  if(score >= 45) return 'Watch';
+  return 'At Risk';
+}
+
+function phase17PortfolioCollectRows_(){
+  const now = Date.now();
+  const rows = [];
+  const upcomingTasks = [];
+  for(const p of (Array.isArray(state?.projects) ? state.projects : [])){
+    const mods = Array.isArray(p?.modules) ? p.modules : [];
+    let modules = mods.length;
+    let milestones = 0;
+    let tasks = 0;
+    let done = 0;
+    let blockerOpen = 0;
+    let highOpen = 0;
+    let overdue = 0;
+    let nextDueTs = 0;
+    let nextDueTaskTitle = '';
+    let nextMilestoneTitle = '';
+    let assignees = new Set();
+
+    for(const mod of mods){
+      const msList = Array.isArray(mod?.milestones) ? mod.milestones : [];
+      milestones += msList.length;
+      for(const m of msList){
+        const tsList = Array.isArray(m?.tasks) ? m.tasks : [];
+        for(const t of tsList){
+          if(!t) continue;
+          tasks++;
+          if(t.done) done++;
+          const sev = String(t.severity || 'normal');
+          if(!t.done && sev === 'blocker') blockerOpen++;
+          if(!t.done && sev === 'high') highOpen++;
+          if(String(t.assignee || '').trim()) assignees.add(String(t.assignee).trim().toLowerCase());
+          const dueAt = Number(t.dueAt || 0);
+          if(!t.done && Number.isFinite(dueAt) && dueAt > 0){
+            if(dueAt < now) overdue++;
+            if(!nextDueTs || dueAt < nextDueTs){
+              nextDueTs = dueAt;
+              nextDueTaskTitle = String(t.title || 'Untitled Task');
+              nextMilestoneTitle = String(m.title || 'Milestone');
+            }
+            upcomingTasks.push({ p, m, t, dueAt });
+          }
+        }
+      }
+    }
+
+    // fallback legacy model support
+    if(!mods.length && Array.isArray(p?.milestones)){
+      milestones = p.milestones.length;
+      for(const m of p.milestones){
+        const tsList = Array.isArray(m?.tasks) ? m.tasks : [];
+        for(const t of tsList){
+          if(!t) continue;
+          tasks++;
+          if(t.done) done++;
+          const sev = String(t.severity || 'normal');
+          if(!t.done && sev === 'blocker') blockerOpen++;
+          if(!t.done && sev === 'high') highOpen++;
+          if(String(t.assignee || '').trim()) assignees.add(String(t.assignee).trim().toLowerCase());
+          const dueAt = Number(t.dueAt || 0);
+          if(!t.done && Number.isFinite(dueAt) && dueAt > 0){
+            if(dueAt < now) overdue++;
+            if(!nextDueTs || dueAt < nextDueTs){
+              nextDueTs = dueAt;
+              nextDueTaskTitle = String(t.title || 'Untitled Task');
+              nextMilestoneTitle = String(m.title || 'Milestone');
+            }
+            upcomingTasks.push({ p, m, t, dueAt });
+          }
+        }
+      }
+    }
+
+    const pct = tasks ? (done / tasks) * 100 : 0;
+    const status = String(p?.status || 'active');
+    const archived = !!p?.archived;
+    let risk = 100;
+    risk -= Math.max(0, blockerOpen) * 22;
+    risk -= Math.max(0, highOpen) * 8;
+    risk -= Math.max(0, overdue) * 14;
+    risk -= Math.round((100 - pct) * 0.35);
+    if(status === 'paused') risk -= 8;
+    if(status === 'done' && pct >= 99) risk = 98;
+    risk = Math.max(0, Math.min(100, risk));
+
+    rows.push({
+      id: String(p.id || ''),
+      name: String(p.name || 'Untitled Project'),
+      tag: String(p.tag || ''),
+      status,
+      archived,
+      modules,
+      milestones,
+      tasks,
+      done,
+      pct,
+      blockerOpen,
+      highOpen,
+      overdue,
+      risk,
+      assigneeCount: assignees.size,
+      nextDueTs,
+      nextDueTaskTitle,
+      nextMilestoneTitle,
+      project: p,
+    });
+  }
+
+  upcomingTasks.sort((a,b)=> a.dueAt - b.dueAt);
+  return { rows, upcomingTasks };
+}
+
+function phase17PortfolioRender_(){
+  const panel = document.querySelector('#tab-portfolio');
+  const root = panel && panel.querySelector('#phase17PortfolioRoot');
+  if(!panel || !root) return;
+
+  const data = phase17PortfolioCollectRows_();
+  let rows = data.rows.slice();
+  const q = String(phase17PortfolioState_.query || '').trim().toLowerCase();
+  const statusFilter = String(phase17PortfolioState_.status || 'all');
+  const sortBy = String(phase17PortfolioState_.sort || 'risk');
+
+  if(statusFilter !== 'all') rows = rows.filter(r => String(r.status) === statusFilter);
+  if(q){
+    rows = rows.filter(r => (`${r.name} ${r.tag} ${r.status}`).toLowerCase().includes(q));
+  }
+
+  rows.sort((a,b)=>{
+    if(sortBy === 'name') return a.name.localeCompare(b.name);
+    if(sortBy === 'progress') return (b.pct - a.pct) || a.name.localeCompare(b.name);
+    if(sortBy === 'due'){
+      const ax = a.nextDueTs || Number.MAX_SAFE_INTEGER;
+      const bx = b.nextDueTs || Number.MAX_SAFE_INTEGER;
+      return (ax - bx) || a.name.localeCompare(b.name);
+    }
+    if(sortBy === 'tasks') return (b.tasks - a.tasks) || a.name.localeCompare(b.name);
+    // default risk: most risky first
+    return (a.risk - b.risk) || (b.overdue - a.overdue) || a.name.localeCompare(b.name);
+  });
+
+  const total = data.rows.length;
+  const activeCount = data.rows.filter(r => r.status === 'active' && !r.archived).length;
+  const pausedCount = data.rows.filter(r => r.status === 'paused').length;
+  const doneCount = data.rows.filter(r => r.status === 'done').length;
+  const atRiskCount = data.rows.filter(r => r.risk < 45 && r.status !== 'done').length;
+  const totalTasks = data.rows.reduce((n,r)=> n + r.tasks, 0);
+  const totalDone = data.rows.reduce((n,r)=> n + r.done, 0);
+  const totalOverdue = data.rows.reduce((n,r)=> n + r.overdue, 0);
+  const totalBlockers = data.rows.reduce((n,r)=> n + r.blockerOpen, 0);
+  const avgRisk = total ? Math.round(data.rows.reduce((n,r)=> n + r.risk, 0) / total) : 0;
+  const avgProgress = totalTasks ? ((totalDone / totalTasks) * 100) : 0;
+  const activeId = String(state?.activeProjectId || '');
+
+  const riskQueue = data.rows
+    .filter(r => r.status !== 'done')
+    .slice()
+    .sort((a,b)=> (a.risk - b.risk) || (b.overdue - a.overdue) || (b.blockerOpen - a.blockerOpen))
+    .slice(0, 8);
+
+  const dueQueue = data.upcomingTasks
+    .filter(x => !x.t.done)
+    .slice(0, 10);
+
+  root.innerHTML = `
+    <div class="phase17-portfolio-wrap">
+      <div class="card">
+        <div class="card__label">Portfolio Summary</div>
+        <div class="phase17-summary">
+          <div class="phase17-kpi">
+            <div class="phase17-kpi__label">Projects</div>
+            <div class="phase17-kpi__value">${escapeHtml(String(total))}</div>
+            <div class="phase17-kpi__sub">${escapeHtml(String(activeCount))} active • ${escapeHtml(String(pausedCount))} paused • ${escapeHtml(String(doneCount))} done</div>
+          </div>
+          <div class="phase17-kpi">
+            <div class="phase17-kpi__label">Portfolio Progress</div>
+            <div class="phase17-kpi__value">${escapeHtml(fmtPct(avgProgress))}</div>
+            <div class="phase17-kpi__sub">${escapeHtml(String(totalDone))} / ${escapeHtml(String(totalTasks))} tasks complete</div>
+          </div>
+          <div class="phase17-kpi">
+            <div class="phase17-kpi__label">At Risk</div>
+            <div class="phase17-kpi__value">${escapeHtml(String(atRiskCount))}</div>
+            <div class="phase17-kpi__sub">${escapeHtml(String(totalBlockers))} blocker task(s) open</div>
+          </div>
+          <div class="phase17-kpi">
+            <div class="phase17-kpi__label">Overdue Tasks</div>
+            <div class="phase17-kpi__value">${escapeHtml(String(totalOverdue))}</div>
+            <div class="phase17-kpi__sub">Across all visible projects</div>
+          </div>
+          <div class="phase17-kpi">
+            <div class="phase17-kpi__label">Avg Health</div>
+            <div class="phase17-kpi__value phase17-risk ${phase17PortfolioRiskClass_(avgRisk)}">${escapeHtml(String(avgRisk))}</div>
+            <div class="phase17-kpi__sub">${escapeHtml(phase17PortfolioRiskLabel_(avgRisk))} portfolio signal</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__top">
+          <div>
+            <div class="card__label">Command Filters</div>
+            <div class="card__hint">Search and sort the portfolio table, then jump into a project workflow.</div>
+          </div>
+        </div>
+        <div class="phase17-controls">
+          <label class="field">
+            <span class="field__label">Search</span>
+            <input id="phase17PortfolioSearch" class="phase17-input" type="search" placeholder="Search project, tag, status..." value="${escapeHtml(String(phase17PortfolioState_.query || ''))}" />
+          </label>
+          <label class="field">
+            <span class="field__label">Status</span>
+            <select id="phase17PortfolioStatus" class="phase17-select">
+              <option value="all" ${statusFilter==='all'?'selected':''}>All</option>
+              <option value="active" ${statusFilter==='active'?'selected':''}>Active</option>
+              <option value="paused" ${statusFilter==='paused'?'selected':''}>Paused</option>
+              <option value="done" ${statusFilter==='done'?'selected':''}>Done</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field__label">Sort</span>
+            <select id="phase17PortfolioSort" class="phase17-select">
+              <option value="risk" ${sortBy==='risk'?'selected':''}>Risk (worst first)</option>
+              <option value="due" ${sortBy==='due'?'selected':''}>Next due date</option>
+              <option value="progress" ${sortBy==='progress'?'selected':''}>Progress %</option>
+              <option value="tasks" ${sortBy==='tasks'?'selected':''}>Task count</option>
+              <option value="name" ${sortBy==='name'?'selected':''}>Project name</option>
+            </select>
+          </label>
+          <div class="row row--actions" style="justify-content:flex-end;gap:6px">
+            <button type="button" class="btn btn--ghost" id="phase17PortfolioClearFilters">Clear Filters</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="phase17-grid">
+        <div class="card">
+          <div class="card__top">
+            <div>
+              <div class="card__label">Project Command Grid</div>
+              <div class="card__hint">Health, progress, overdue load, and quick actions per project.</div>
+            </div>
+            <div class="badge">${escapeHtml(String(rows.length))} visible</div>
+          </div>
+          <div class="phase17-list">
+            ${rows.length ? rows.map(r => {
+              const pct = Math.max(0, Math.min(100, r.pct || 0));
+              const riskClass = phase17PortfolioRiskClass_(r.risk);
+              const riskLabel = phase17PortfolioRiskLabel_(r.risk);
+              const statusBadge = String(r.status || 'active').toUpperCase();
+              return `
+                <div class="phase17-row ${activeId === r.id ? 'is-active' : ''}" data-project-id="${escapeHtml(r.id)}">
+                  <div class="phase17-rowHead">
+                    <div class="phase17-rowTitle">${escapeHtml(r.name)}</div>
+                    <div class="phase17-rowMeta">${r.tag ? escapeHtml(r.tag) + ' • ' : ''}${escapeHtml(statusBadge)}${r.archived ? ' • ARCHIVED' : ''}</div>
+                    <div class="phase17-bar" aria-hidden="true"><i style="width:${pct}%"></i></div>
+                  </div>
+                  <div class="phase17-rowStat"><b>${escapeHtml(fmtPct(pct))}</b><span>Progress</span></div>
+                  <div class="phase17-rowStat"><b>${escapeHtml(String(r.done))}/${escapeHtml(String(r.tasks))}</b><span>Tasks</span></div>
+                  <div class="phase17-rowStat"><b>${escapeHtml(String(r.modules))}/${escapeHtml(String(r.milestones))}</b><span>Mod/MS</span></div>
+                  <div class="phase17-rowStat"><b>${escapeHtml(String(r.overdue))}</b><span>Overdue</span></div>
+                  <div class="phase17-rowStat"><b class="phase17-risk ${riskClass}">${escapeHtml(String(r.risk))}</b><span>${escapeHtml(riskLabel)}</span></div>
+                  <div>
+                    <div class="phase17-pillset">
+                      <span class="phase17-pill">Blocker ${escapeHtml(String(r.blockerOpen))}</span>
+                      <span class="phase17-pill">High ${escapeHtml(String(r.highOpen))}</span>
+                      <span class="phase17-pill">Team ${escapeHtml(String(r.assigneeCount))}</span>
+                      <span class="phase17-pill">Next Due ${escapeHtml(phase17PortfolioFmtDate_(r.nextDueTs))}</span>
+                    </div>
+                    <div class="phase17-rowActions" style="margin-top:6px">
+                      <button type="button" class="phase17-btn" data-phase17-action="focus" data-project-id="${escapeHtml(r.id)}">Focus Dashboard</button>
+                      <button type="button" class="phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open Project</button>
+                      <button type="button" class="phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(r.id)}">Open Checklist</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('') : `<div class="phase17-empty">No projects match your current filters. Try clearing filters or create/import a project.</div>`}
+          </div>
+        </div>
+
+        <div class="phase17-sideCard">
+          <div class="card">
+            <div class="card__label">Risk Queue</div>
+            <div class="phase17-sideList">
+              ${riskQueue.length ? riskQueue.map(r => `
+                <div class="phase17-sideItem">
+                  <div class="phase17-sideItemTitle">${escapeHtml(r.name)}</div>
+                  <div class="phase17-sideItemMeta">${escapeHtml(String(r.status || 'active').toUpperCase())} • ${escapeHtml(fmtPct(r.pct || 0))} complete</div>
+                  <div class="phase17-sideItemRow">
+                    <div class="phase17-pillset" style="justify-content:flex-start">
+                      <span class="phase17-pill">Overdue ${escapeHtml(String(r.overdue))}</span>
+                      <span class="phase17-pill">Blocker ${escapeHtml(String(r.blockerOpen))}</span>
+                    </div>
+                    <button type="button" class="phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open</button>
+                  </div>
+                </div>
+              `).join('') : `<div class="phase17-empty">Risk queue is clear. Add more projects/tasks or due dates to surface risk signals.</div>`}
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card__label">Upcoming Due Tasks</div>
+            <div class="phase17-sideList">
+              ${dueQueue.length ? dueQueue.map(x => `
+                <div class="phase17-sideItem">
+                  <div class="phase17-sideItemTitle">${escapeHtml(String(x.t?.title || 'Untitled Task'))}</div>
+                  <div class="phase17-sideItemMeta">${escapeHtml(String(x.p?.name || 'Project'))} • ${escapeHtml(String(x.m?.title || 'Milestone'))}</div>
+                  <div class="phase17-sideItemRow">
+                    <span class="badge">${escapeHtml(phase17PortfolioFmtDate_(x.dueAt))}</span>
+                    <button type="button" class="phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(String(x.p?.id || ''))}">Open</button>
+                  </div>
+                </div>
+              `).join('') : `<div class="phase17-empty">No due dates detected yet. Use task due dates to enable timeline visibility here.</div>`}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const clearBtn = root.querySelector('#phase17PortfolioClearFilters');
+  if(clearBtn && !clearBtn._phase17Bound){
+    clearBtn.addEventListener('click', ()=>{
+      phase17PortfolioState_.query = '';
+      phase17PortfolioState_.status = 'all';
+      phase17PortfolioState_.sort = 'risk';
+      phase17PortfolioSaveUiState_();
+      phase17PortfolioRender_();
+    });
+    clearBtn._phase17Bound = true;
+  }
+}
+
+try{ initPhase17Portfolio_(); }catch(err){ console.warn('Phase17 portfolio init failed', err); }
+
+/* ---------------------------
+   Phase 18 — Basic / Advanced Mode Toggle (Milestone 4)
+   - Default mode is Basic on first load
+   - Advanced mode reveals Portfolio + Advanced Panels tabs
+   - Mode toggle is kept visible in topbar and mirrored on Dashboard Focus card
+---------------------------- */
+const PHASE18_UI_MODE_KEY = "stark_pm_ui_mode_v1";
+const phase18UiModeState_ = {
+  inited: false,
+  mode: "basic",
+  renderWrapped: false,
+  switchWrapped: false,
+  timer: 0,
+};
+
+function initPhase18UiMode_(){
+  if(phase18UiModeState_.inited) return;
+  phase18UiModeState_.inited = true;
+  try{ phase18UiModeLoad_(); }catch{}
+  try{ phase18UiModeEnsureStyles_(); }catch(err){ console.warn('Phase18 UI mode styles failed', err); }
+  try{ phase18UiModeWrapSwitchTab_(); }catch(err){ console.warn('Phase18 UI mode switch wrap failed', err); }
+  try{ phase18UiModeWrapRenderAll_(); }catch(err){ console.warn('Phase18 UI mode render wrap failed', err); }
+  try{ phase18UiModeApply_({ force:true }); }catch(err){ console.warn('Phase18 UI mode apply failed', err); }
+  setTimeout(()=>{ try{ phase18UiModeApply_({ force:true }); }catch{} }, 80);
+}
+
+function phase18UiModeLoad_(){
+  let raw = '';
+  try{ raw = String(localStorage.getItem(PHASE18_UI_MODE_KEY) || ''); }catch{ raw = ''; }
+  phase18UiModeState_.mode = (raw === 'advanced') ? 'advanced' : 'basic';
+}
+
+function phase18UiModeSave_(){
+  try{ localStorage.setItem(PHASE18_UI_MODE_KEY, phase18UiModeState_.mode === 'advanced' ? 'advanced' : 'basic'); }catch{}
+}
+
+function phase18UiModeIsAdvanced_(){
+  return phase18UiModeState_.mode === 'advanced';
+}
+
+function phase18UiModeEnsureStyles_(){
+  if(document.querySelector('#phase18UiModeStyles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase18UiModeStyles';
+  st.textContent = `
+    .phase18uimode-hidden{display:none !important}
+    #btnUiMode{min-width:126px;justify-content:center}
+    #phase18DashboardModeNote{font-size:11px;opacity:.82;line-height:1.35}
+  `;
+  document.head.appendChild(st);
+}
+
+function phase18UiModeRenderTopbarButton_(){
+  const btn = document.getElementById('btnUiMode');
+  if(!btn) return;
+  const isAdv = phase18UiModeIsAdvanced_();
+  btn.textContent = isAdv ? 'Mode: Advanced' : 'Mode: Basic';
+  btn.title = isAdv
+    ? 'Advanced mode is ON (Portfolio + Advanced Panels visible). Click to switch to Basic mode.'
+    : 'Basic mode is ON (core PM workflow only). Click to enable Advanced mode.';
+  btn.setAttribute('aria-pressed', isAdv ? 'true' : 'false');
+}
+
+function phase18UiModeEnsureTopbarButton_(){
+  const topbarRight = document.querySelector('.topbar__right');
+  if(!topbarRight) return;
+
+  let btn = document.getElementById('btnUiMode');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn--ghost';
+    btn.id = 'btnUiMode';
+    const anchor = document.getElementById('btnUndo') || topbarRight.querySelector('.topbar-menu') || null;
+    if(anchor && anchor.parentElement === topbarRight) topbarRight.insertBefore(btn, anchor);
+    else topbarRight.appendChild(btn);
+  }
+
+  if(!btn._phase18UiModeBound){
+    btn.addEventListener('click', ()=> phase18UiModeToggle_());
+    btn._phase18UiModeBound = true;
+  }
+
+  phase18UiModeRenderTopbarButton_();
+
+  try{ initTopbarDeclutter_(); }catch{}
+  try{
+    if(topbarRight._topbarDeclutterSync) topbarRight._topbarDeclutterSync();
+  }catch{}
+}
+
+function phase18UiModeSetTabVisibility_(tabId, visible){
+  const navBtn = document.querySelector(`.nav .nav__item[data-tab="${tabId}"]`);
+  const panel = document.querySelector(`.tab[data-tab="${tabId}"]`);
+  [navBtn, panel].forEach(el => {
+    if(!el) return;
+    el.classList.toggle('phase18uimode-hidden', !visible);
+    if(visible){
+      el.style.display = '';
+      if(el === navBtn) el.removeAttribute('aria-hidden');
+    }else{
+      el.style.display = 'none';
+      el.setAttribute('aria-hidden', 'true');
+    }
+  });
+}
+
+function phase18UiModeDecorateDashboardFocusCard_(){
+  const card = document.querySelector('#phase16DashboardFocusCard');
+  if(!card) return;
+
+  const actions = card.querySelector('.phase16polish-focusActions');
+  if(actions){
+    let toggleBtn = card.querySelector('#phase18DashboardModeToggle');
+    if(!toggleBtn){
+      toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'btn btn--ghost';
+      toggleBtn.id = 'phase18DashboardModeToggle';
+      actions.insertBefore(toggleBtn, actions.firstChild || null);
+    }
+    if(!toggleBtn._phase18UiModeBound){
+      toggleBtn.addEventListener('click', ()=> phase18UiModeToggle_());
+      toggleBtn._phase18UiModeBound = true;
+    }
+    toggleBtn.textContent = phase18UiModeIsAdvanced_() ? 'Switch to Basic Mode' : 'Enable Advanced Mode';
+
+    const advBtn = card.querySelector('#phase16DashboardFocusOpenAdvanced');
+    const portBtn = card.querySelector('#phase16DashboardFocusOpenPortfolio');
+    [advBtn, portBtn].forEach(el => {
+      if(!el) return;
+      el.classList.toggle('phase16polish-hidden', !phase18UiModeIsAdvanced_());
+      el.disabled = !phase18UiModeIsAdvanced_();
+    });
+  }
+
+  const wrap = card.querySelector('.phase16polish-focusWrap') || card;
+  let note = card.querySelector('#phase18DashboardModeNote');
+  if(!note){
+    note = document.createElement('div');
+    note.id = 'phase18DashboardModeNote';
+    wrap.appendChild(note);
+  }
+  note.textContent = phase18UiModeIsAdvanced_()
+    ? 'Advanced mode is enabled. Portfolio and Advanced Panels are visible in the sidebar.'
+    : 'Basic mode is enabled. Portfolio and Advanced Panels are hidden to keep the workflow focused.';
+}
+
+function phase18UiModeScheduleApply_(){
+  if(phase18UiModeState_.timer){
+    try{ clearTimeout(phase18UiModeState_.timer); }catch{}
+  }
+  phase18UiModeState_.timer = setTimeout(() => {
+    phase18UiModeState_.timer = 0;
+    try{ phase18UiModeApply_(); }catch(err){ console.warn('Phase18 UI mode scheduled apply failed', err); }
+  }, 45);
+}
+
+function phase18UiModeApply_(opts){
+  const force = !!(opts && opts.force);
+  const isAdv = phase18UiModeIsAdvanced_();
+
+  try{ phase18UiModeEnsureTopbarButton_(); }catch{}
+  phase18UiModeSetTabVisibility_('advanced-panels', isAdv);
+  phase18UiModeSetTabVisibility_('portfolio', isAdv);
+  try{ phase18UiModeDecorateDashboardFocusCard_(); }catch{}
+
+  const activeTab = document.querySelector('.tab.is-active')?.dataset?.tab || '';
+  if(!isAdv && (activeTab === 'advanced-panels' || activeTab === 'portfolio')){
+    try{ switchTab('dashboard'); }catch{}
+    return;
+  }
+
+  if(force){
+    const hiddenNavActive = document.querySelector('.nav .nav__item.is-active.phase18uimode-hidden');
+    if(hiddenNavActive){
+      try{ switchTab('dashboard'); }catch{}
+    }
+  }
+}
+
+function phase18UiModeSetMode_(nextMode){
+  const normalized = (String(nextMode || '').toLowerCase() === 'advanced') ? 'advanced' : 'basic';
+  if(phase18UiModeState_.mode === normalized){
+    try{ phase18UiModeApply_(); }catch{}
+    return;
+  }
+  phase18UiModeState_.mode = normalized;
+  phase18UiModeSave_();
+  try{ phase18UiModeApply_({ force:true }); }catch{}
+  try{
+    if(typeof addActivity === 'function'){
+      addActivity(`UI mode: ${normalized === 'advanced' ? 'Advanced' : 'Basic'}`);
+    }
+  }catch{}
+}
+
+function phase18UiModeToggle_(){
+  phase18UiModeSetMode_(phase18UiModeIsAdvanced_() ? 'basic' : 'advanced');
+}
+
+function phase18UiModeWrapSwitchTab_(){
+  if(phase18UiModeState_.switchWrapped) return;
+  if(typeof switchTab !== 'function') return;
+  const _orig = switchTab;
+  switchTab = function(tabId){
+    const nextTab = String(tabId || '');
+    if(!phase18UiModeIsAdvanced_() && (nextTab === 'advanced-panels' || nextTab === 'portfolio')){
+      phase18UiModeScheduleApply_();
+      return _orig.call(this, 'dashboard');
+    }
+    const r = _orig.apply(this, arguments);
+    phase18UiModeScheduleApply_();
+    return r;
+  };
+  phase18UiModeState_.switchWrapped = true;
+}
+
+function phase18UiModeWrapRenderAll_(){
+  if(phase18UiModeState_.renderWrapped) return;
+  if(typeof renderAll !== 'function') return;
+  const _orig = renderAll;
+  renderAll = function(){
+    const r = _orig.apply(this, arguments);
+    phase18UiModeScheduleApply_();
+    return r;
+  };
+  phase18UiModeState_.renderWrapped = true;
+}
+
+try{ initPhase18UiMode_(); }catch(err){ console.warn('Phase18 UI mode init failed', err); }
+
+/* ---------------------------
+   Phase 19 — Render Hook Registry Stabilizer (Milestone 5)
+   - Central post-render hook registry for Dashboard + Checklist
+   - Keeps future UI cleanup hooks out of render wrapper chains
+   - Registers late UI cleanup schedulers via the registry
+---------------------------- */
+const phase19RenderHookState_ = {
+  inited: false,
+  wrapped: { dashboard:false, checklist:false },
+  surfaces: { dashboard: new Map(), checklist: new Map() },
+  baseFns: { dashboard: null, checklist: null }
+};
+
+function initPhase19RenderHookStabilizer_(){
+  if(phase19RenderHookState_.inited) return;
+  phase19RenderHookState_.inited = true;
+
+  try{ phase19RenderHookExposeApi_(); }catch(err){ console.warn('Phase19 render hook API failed', err); }
+  try{ phase19RenderHookWrapSurface_('dashboard'); }catch(err){ console.warn('Phase19 dashboard wrap failed', err); }
+  try{ phase19RenderHookWrapSurface_('checklist'); }catch(err){ console.warn('Phase19 checklist wrap failed', err); }
+
+  // Register known late-phase UI cleanup tasks so they run through one registry.
+  try{
+    if(typeof phase16PolishSchedule_ === 'function'){
+      phase19PostRenderRegister_('dashboard', 'phase16-polish-cleanup', ()=>{ try{ phase16PolishSchedule_(); }catch{} }, { order: 60 });
+    }
+  }catch(err){ console.warn('Phase19 register phase16 hook failed', err); }
+
+  try{
+    if(typeof phase18UiModeScheduleApply_ === 'function'){
+      const applyMode = ()=>{ try{ phase18UiModeScheduleApply_(); }catch{} };
+      phase19PostRenderRegister_('dashboard', 'phase18-ui-mode', applyMode, { order: 80 });
+      phase19PostRenderRegister_('checklist', 'phase18-ui-mode', applyMode, { order: 80 });
+    }
+  }catch(err){ console.warn('Phase19 register phase18 hook failed', err); }
+}
+
+function phase19RenderHookSurfaceFnName_(surface){
+  return surface === 'dashboard' ? 'renderDashboard' : (surface === 'checklist' ? 'renderChecklist' : '');
+}
+
+function phase19RenderHookExposeApi_(){
+  const api = window.StarkPMPostRenderHooks || {};
+  api.version = 'phase19';
+  api.register = phase19PostRenderRegister_;
+  api.unregister = phase19PostRenderUnregister_;
+  api.list = phase19PostRenderList_;
+  api.run = phase19PostRenderRun_;
+  window.StarkPMPostRenderHooks = api;
+}
+
+function phase19PostRenderRegister_(surface, key, fn, opts){
+  const surf = String(surface || '').toLowerCase();
+  if(!(surf in phase19RenderHookState_.surfaces)) return false;
+  if(typeof fn !== 'function') return false;
+  const id = String(key || `hook_${Date.now()}_${Math.random().toString(36).slice(2,7)}`);
+  const order = Number((opts && opts.order) ?? 100);
+  phase19RenderHookState_.surfaces[surf].set(id, {
+    key: id,
+    fn,
+    order: Number.isFinite(order) ? order : 100,
+    enabled: (opts && opts.enabled === false) ? false : true
+  });
+  return true;
+}
+
+function phase19PostRenderUnregister_(surface, key){
+  const surf = String(surface || '').toLowerCase();
+  const id = String(key || '');
+  const map = phase19RenderHookState_.surfaces[surf];
+  if(!map) return false;
+  return map.delete(id);
+}
+
+function phase19PostRenderList_(surface){
+  const surf = String(surface || '').toLowerCase();
+  const map = phase19RenderHookState_.surfaces[surf];
+  if(!map) return [];
+  return Array.from(map.values())
+    .map(h => ({ key:h.key, order:h.order, enabled:!!h.enabled }))
+    .sort((a,b)=> (a.order - b.order) || String(a.key).localeCompare(String(b.key)));
+}
+
+function phase19PostRenderRun_(surface, ctx){
+  const surf = String(surface || '').toLowerCase();
+  const map = phase19RenderHookState_.surfaces[surf];
+  if(!map || !map.size) return;
+  const list = Array.from(map.values())
+    .filter(h => h && h.enabled !== false && typeof h.fn === 'function')
+    .sort((a,b)=> (a.order - b.order) || String(a.key).localeCompare(String(b.key)));
+  for(const hook of list){
+    try{ hook.fn(ctx || {}); }
+    catch(err){ console.warn(`Phase19 post-render hook failed (${surf}:${hook.key})`, err); }
+  }
+}
+
+function phase19RenderHookWrapSurface_(surface){
+  const surf = String(surface || '').toLowerCase();
+  if(!(surf in phase19RenderHookState_.wrapped)) return;
+  if(phase19RenderHookState_.wrapped[surf]) return;
+
+  const fnName = phase19RenderHookSurfaceFnName_(surf);
+  if(!fnName || typeof window[fnName] !== 'function') return;
+
+  const currentFn = window[fnName];
+  if(currentFn && currentFn._phase19PostRenderWrapper){
+    phase19RenderHookState_.wrapped[surf] = true;
+    return;
+  }
+
+  phase19RenderHookState_.baseFns[surf] = currentFn;
+
+  const wrappedFn = function(){
+    const result = currentFn.apply(this, arguments);
+    try{
+      phase19PostRenderRun_(surf, {
+        surface: surf,
+        args: Array.from(arguments || []),
+        result,
+        activeTab: document.querySelector('.tab.is-active')?.dataset?.tab || ''
+      });
+    }catch(err){
+      console.warn(`Phase19 post-render runner failed (${surf})`, err);
+    }
+    return result;
+  };
+  wrappedFn._phase19PostRenderWrapper = true;
+  wrappedFn._phase19PostRenderSurface = surf;
+  wrappedFn._phase19PostRenderBase = currentFn;
+
+  window[fnName] = wrappedFn;
+  phase19RenderHookState_.wrapped[surf] = true;
+}
+
+try{ initPhase19RenderHookStabilizer_(); }catch(err){ console.warn('Phase19 render hook stabilizer init failed', err); }
+
+
+
+/* ---------------------------
+   Phase 20 — Advanced Panels Category Tabs Split (Milestone 6)
+   - Keep only Workspace Catalog & Favorites in "Advanced Panels"
+   - Move category groups into dedicated sidebar tabs
+---------------------------- */
+const phase20AdvSplitState_ = {
+  inited:false,
+  timer:0,
+  wrappedSwitch:false,
+  wrappedPhase18Apply:false,
+  wrappedPhase16Apply:false,
+  navCollapsed:true,
+  tabDefs: [
+    { key:'ops', tabId:'advanced-ops-alerts', panelId:'tab-advanced-ops-alerts', hostId:'phase20AdvSplitHostOps', icon:'⚙', navText:'Ops & Alerts', title:'Ops & Alerts', subtitle:'Operational monitoring, workload, capacity, and alert-related advanced panels.' },
+    { key:'automation', tabId:'advanced-automation-review', panelId:'tab-advanced-automation-review', hostId:'phase20AdvSplitHostAutomation', icon:'⟳', navText:'Automation & Review', title:'Automation & Review', subtitle:'Automation, review workflows, and follow-up orchestration panels.' },
+    { key:'approval', tabId:'advanced-approvals-team', panelId:'tab-advanced-approvals-team', hostId:'phase20AdvSplitHostApproval', icon:'👥', navText:'Approvals & Team', title:'Approvals & Team', subtitle:'Approval queues, RBAC controls, and team management panels.' },
+    { key:'reports', tabId:'advanced-reports-export', panelId:'tab-advanced-reports-export', hostId:'phase20AdvSplitHostReports', icon:'⇪', navText:'Reports & Export', title:'Reports & Export Tools', subtitle:'Reporting, exports, and any overflow tools routed out of Dashboard.' }
+  ]
+};
+
+function initPhase20AdvancedSplitTabs_(){
+  if(phase20AdvSplitState_.inited) return;
+  phase20AdvSplitState_.inited = true;
+  try{ phase20AdvSplitEnsureStyles_(); }catch(err){ console.warn('Phase20 split styles failed', err); }
+  try{ phase20AdvSplitEnsureTabs_(); }catch(err){ console.warn('Phase20 split tabs ensure failed', err); }
+  try{ phase20AdvSplitPatchCatalogFns_(); }catch(err){ console.warn('Phase20 split catalog patch failed', err); }
+  try{ phase20AdvSplitPatchPhase16Cleanup_(); }catch(err){ console.warn('Phase20 split phase16 patch failed', err); }
+  try{ phase20AdvSplitPatchUiMode_(); }catch(err){ console.warn('Phase20 split phase18 patch failed', err); }
+  try{ phase20AdvSplitWrapSwitchTab_(); }catch(err){ console.warn('Phase20 split switchTab wrap failed', err); }
+  try{ phase20AdvSplitRegisterHooks_(); }catch(err){ console.warn('Phase20 split hook register failed', err); }
+  try{ phase20AdvSplitSchedule_(); }catch{}
+  setTimeout(()=>{ try{ phase20AdvSplitSchedule_(); }catch{} }, 120);
+}
+
+function phase20AdvSplitDefs_(){
+  return Array.isArray(phase20AdvSplitState_.tabDefs) ? phase20AdvSplitState_.tabDefs : [];
+}
+
+function phase20AdvSplitKeyToTabId_(key){
+  const def = phase20AdvSplitDefs_().find(d => d.key === String(key||''));
+  return def ? def.tabId : 'advanced-panels';
+}
+
+function phase20AdvSplitEnsureStyles_(){
+  if(document.querySelector('#phase20AdvSplitStyles')) return;
+  const st = document.createElement('style');
+  st.id = 'phase20AdvSplitStyles';
+  st.textContent = `
+    #phase16PolishDashRoot.phase20advsplit-catalogonly .phase16polish-actions{display:none !important}
+    #phase16PolishDashRoot.phase20advsplit-catalogonly .phase16polish-grid{display:none !important}
+    #phase16PolishDashRoot.phase20advsplit-catalogonly .phase16polish-sub{max-width:780px}
+    .phase20advsplit-wrap{display:grid;gap:12px}
+    .phase20advsplit-host > details.phase16polish-group{margin:0}
+    .phase20advsplit-host > details.phase16polish-group:only-child{display:block !important}
+    .phase20advsplit-host .phase16polish-body{padding:12px}
+    .phase20advsplit-empty{font-size:11px;opacity:.72;padding:6px 0}
+
+    /* Sidebar visual grouping: nest advanced category tabs under Advanced Panels */
+    .phase20advsplit-navgroup{display:grid;gap:8px}
+    .phase20advsplit-navgroup > .nav__item[data-tab="advanced-panels"]{position:relative;padding-right:30px}
+    .phase20advsplit-navgroup > .nav__item[data-tab="advanced-panels"]::before{
+      content:"▾";
+      position:absolute;
+      right:10px;
+      top:50%;
+      transform:translateY(-50%);
+      font-size:11px;
+      line-height:1;
+      opacity:.72;
+      transition:transform .18s ease, opacity .18s ease;
+      pointer-events:none;
+      background:none;
+    }
+    .phase20advsplit-navgroup.is-collapsed > .nav__item[data-tab="advanced-panels"]::before{
+      transform:translateY(-50%) rotate(-90deg);
+      opacity:.9;
+    }
+    .phase20advsplit-navsub{
+      display:grid;
+      gap:8px;
+      margin-top:-2px;
+      margin-left:10px;
+      padding:10px 10px 10px 12px;
+      border-radius:12px;
+      background:linear-gradient(180deg, rgba(10,18,28,0.18), rgba(10,18,28,0.08));
+      border:1px solid rgba(56,246,255,0.07);
+      border-left-color: rgba(56,246,255,0.16);
+      box-shadow: inset 0 0 0 1px rgba(155,92,255,0.03);
+      position:relative;
+    }
+    .phase20advsplit-navgroup.is-collapsed .phase20advsplit-navsub{display:none !important}
+    .phase20advsplit-navsub::before{
+      content:"";
+      position:absolute;
+      left:8px;
+      top:10px;
+      bottom:10px;
+      width:1px;
+      background:linear-gradient(180deg, rgba(56,246,255,0.16), rgba(155,92,255,0.08));
+      opacity:.9;
+      pointer-events:none;
+    }
+    .phase20advsplit-navchild{
+      margin-left:0;
+      padding:10px 11px;
+      border-radius:10px;
+      background:rgba(10,18,28,0.18);
+      border-color:rgba(56,246,255,0.08);
+    }
+    .phase20advsplit-navchild .nav__text{font-size:11px; letter-spacing:0.07em}
+    .phase20advsplit-navchild .nav__icon{opacity:.75; font-size:12px}
+    .phase20advsplit-navgroup.is-child-active > .nav__item[data-tab="advanced-panels"]{
+      border-color: rgba(56,246,255,0.24);
+      box-shadow: 0 0 0 1px rgba(155,92,255,0.07) inset, 0 0 14px rgba(56,246,255,0.08);
+      background: rgba(10,18,28,0.32);
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+function phase20AdvSplitEnsureNavGroup_(sidebarNav, advancedBtn){
+  if(!sidebarNav || !advancedBtn) return null;
+  let group = sidebarNav.querySelector('#phase20AdvSplitNavGroup');
+  let sub = sidebarNav.querySelector('#phase20AdvSplitNavSub');
+
+  if(!group){
+    group = document.createElement('div');
+    group.id = 'phase20AdvSplitNavGroup';
+    group.className = 'phase20advsplit-navgroup';
+  }
+  if(!sub){
+    sub = document.createElement('div');
+    sub.id = 'phase20AdvSplitNavSub';
+    sub.className = 'phase20advsplit-navsub';
+  }
+
+  if(advancedBtn.parentElement !== group){
+    if(group.parentElement !== sidebarNav){
+      if(advancedBtn.parentElement === sidebarNav) advancedBtn.insertAdjacentElement('beforebegin', group);
+      else sidebarNav.appendChild(group);
+    }
+    group.insertAdjacentElement('afterbegin', advancedBtn);
+  }
+  if(sub.parentElement !== group) group.appendChild(sub);
+
+  if(!advancedBtn._phase20AdvSplitCollapseBound){
+    advancedBtn.addEventListener('click', () => {
+      try{ phase20AdvSplitToggleNavGroup_(); }catch{}
+    });
+    advancedBtn._phase20AdvSplitCollapseBound = true;
+  }
+
+  if(!sub.id) sub.id = 'phase20AdvSplitNavSub';
+  advancedBtn.setAttribute('aria-controls', sub.id);
+  advancedBtn.setAttribute('aria-haspopup', 'true');
+
+  return { group, sub };
+}
+
+function phase20AdvSplitToggleNavGroup_(nextCollapsed){
+  if(typeof nextCollapsed === 'boolean') phase20AdvSplitState_.navCollapsed = nextCollapsed;
+  else phase20AdvSplitState_.navCollapsed = !phase20AdvSplitState_.navCollapsed;
+  try{ phase20AdvSplitSyncNavGroupState_(); }catch{}
+}
+
+function phase20AdvSplitSyncNavGroupState_(){
+  const group = document.querySelector('#phase20AdvSplitNavGroup');
+  const sub = document.querySelector('#phase20AdvSplitNavSub');
+  const advancedBtn = document.querySelector('.nav #phase20AdvSplitNavGroup > .nav__item[data-tab="advanced-panels"]');
+  if(!group) return;
+  const active = document.querySelector('.nav .nav__item.is-active')?.dataset?.tab || '';
+  const childDefs = phase20AdvSplitDefs_();
+  const isChildActive = childDefs.some(def => def.tabId === active);
+  group.classList.toggle('is-child-active', !!isChildActive);
+  const collapsed = !!phase20AdvSplitState_.navCollapsed && !isChildActive;
+  group.classList.toggle('is-collapsed', collapsed);
+  if(sub){
+    const visibleChildren = Array.from(sub.querySelectorAll('.nav__item')).filter(btn => btn.style.display !== 'none');
+    sub.style.display = (visibleChildren.length && !collapsed) ? '' : 'none';
+    sub.setAttribute('aria-hidden', (visibleChildren.length && !collapsed) ? 'false' : 'true');
+  }
+  if(advancedBtn){
+    advancedBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  }
+}
+
+function phase20AdvSplitEnsureTabs_(){
+  const sidebarNav = document.querySelector('.nav');
+  const advancedBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="advanced-panels"]');
+  const advancedPanel = document.querySelector('#tab-advanced-panels');
+  const dashboardTab = document.querySelector('#tab-dashboard');
+  if(!sidebarNav || !advancedBtn || !advancedPanel || !dashboardTab || !dashboardTab.parentElement) return;
+
+  const portfolioBtn = sidebarNav.querySelector('.nav__item[data-tab="portfolio"]');
+  const portfolioPanel = document.querySelector('#tab-portfolio');
+  const navGroupRefs = phase20AdvSplitEnsureNavGroup_(sidebarNav, advancedBtn);
+  const navSub = navGroupRefs && navGroupRefs.sub;
+
+  let navInsertAfter = null;
+  let panelInsertAfter = advancedPanel;
+
+  phase20AdvSplitDefs_().forEach((def) => {
+    let navBtn = sidebarNav.querySelector(`.nav__item[data-tab="${def.tabId}"]`);
+    if(!navBtn){
+      navBtn = document.createElement('button');
+      navBtn.type = 'button';
+      navBtn.className = 'nav__item';
+      navBtn.dataset.tab = def.tabId;
+      navBtn.innerHTML = `<span class="nav__icon">${def.icon}</span><span class="nav__text">${def.navText}</span>`;
+      if(navInsertAfter && navInsertAfter.parentElement === navSub) navInsertAfter.insertAdjacentElement('afterend', navBtn);
+      else if(navSub) navSub.appendChild(navBtn);
+      else if(portfolioBtn && portfolioBtn.parentElement === sidebarNav) portfolioBtn.insertAdjacentElement('beforebegin', navBtn);
+      else sidebarNav.appendChild(navBtn);
+    }
+    if(navSub && navBtn.parentElement !== navSub) navSub.appendChild(navBtn);
+    navBtn.classList.add('phase20advsplit-navchild');
+    navBtn.dataset.parentTab = 'advanced-panels';
+    navInsertAfter = navBtn;
+
+    let panel = document.querySelector('#'+def.panelId);
+    if(!panel){
+      panel = document.createElement('section');
+      panel.className = 'tab';
+      panel.id = def.panelId;
+      panel.dataset.tab = def.tabId;
+      panel.innerHTML = `
+        <div class="tab__header">
+          <div class="tab__title">${def.title}</div>
+          <div class="tab__subtitle">${def.subtitle}</div>
+        </div>
+        <div class="phase20advsplit-wrap">
+          <div class="card">
+            <div class="card__top">
+              <div>
+                <div class="card__label">Advanced Panel Category</div>
+                <div class="card__title">${def.title}</div>
+                <div class="card__meta" id="phase20AdvSplitMeta-${def.key}">Panels grouped under ${def.navText}.</div>
+              </div>
+            </div>
+            <div class="phase20advsplit-host" id="${def.hostId}">
+              <div class="phase20advsplit-empty">Loading category panels…</div>
+            </div>
+          </div>
+        </div>
+      `;
+      if(panelInsertAfter && panelInsertAfter.parentElement) panelInsertAfter.insertAdjacentElement('afterend', panel);
+      else if(portfolioPanel && portfolioPanel.parentElement) portfolioPanel.insertAdjacentElement('beforebegin', panel);
+      else advancedPanel.insertAdjacentElement('afterend', panel);
+    }
+    panelInsertAfter = panel;
+
+    if(ui && Array.isArray(ui.tabs) && !ui.tabs.some(x => x && x.dataset && x.dataset.tab === def.tabId)){
+      let idx = ui.tabs.findIndex(x => x && x.dataset && x.dataset.tab === 'portfolio');
+      if(idx < 0) idx = ui.tabs.length;
+      ui.tabs.splice(idx, 0, navBtn);
+    }
+    if(ui && Array.isArray(ui.tabPanels) && !ui.tabPanels.some(x => x && x.dataset && x.dataset.tab === def.tabId)){
+      let idx = ui.tabPanels.findIndex(x => x && x.dataset && x.dataset.tab === 'portfolio');
+      if(idx < 0) idx = ui.tabPanels.length;
+      ui.tabPanels.splice(idx, 0, panel);
+    }
+
+    if(!navBtn._phase20AdvSplitBound){
+      navBtn.addEventListener('click', ()=>{ try{ switchTab(def.tabId); }catch{} });
+      navBtn._phase20AdvSplitBound = true;
+    }
+  });
+
+  try{ phase20AdvSplitSyncNavGroupState_(); }catch{}
+}
+
+function phase20AdvSplitSchedule_(){
+  if(phase20AdvSplitState_.timer){ try{ clearTimeout(phase20AdvSplitState_.timer); }catch{} }
+  phase20AdvSplitState_.timer = setTimeout(()=>{
+    phase20AdvSplitState_.timer = 0;
+    try{ phase20AdvSplitApply_(); }catch(err){ console.warn('Phase20 split apply failed', err); }
+  }, 35);
+}
+
+function phase20AdvSplitApply_(){
+  try{ phase20AdvSplitEnsureTabs_(); }catch{}
+  const root = document.querySelector('#phase16PolishDashRoot');
+  if(!root) return;
+
+  root.classList.add('phase20advsplit-catalogonly');
+  const headTitle = root.querySelector('.phase16polish-title');
+  const headSub = root.querySelector('.phase16polish-sub');
+  if(headTitle) headTitle.textContent = 'Advanced Panels Catalog';
+  if(headSub) headSub.textContent = 'Workspace Catalog & Favorites stays here. Open dedicated category tabs for Ops, Automation, Approvals, and Reports tools.';
+
+  phase20AdvSplitDefs_().forEach((def)=>{
+    const host = document.getElementById(def.hostId);
+    const group = document.querySelector(`details.phase16polish-group[data-key="${def.key}"]`);
+    if(host && group && group.parentElement !== host) host.appendChild(group);
+    if(group) group.open = true;
+    const meta = document.getElementById(`phase20AdvSplitMeta-${def.key}`);
+    const count = group ? (group.querySelector('.phase16polish-body')?.children.length || 0) : 0;
+    if(meta) meta.textContent = `${count} panel${count===1?'':'s'} in ${def.navText}.`;
+  });
+
+  try{ phase20AdvSplitRefreshDashboardFocusCard_(); }catch{}
+  try{ phase20AdvSplitApplyUiModeExtras_(); }catch{}
+}
+
+function phase20AdvSplitRefreshDashboardFocusCard_(){
+  const card = document.querySelector('#phase16DashboardFocusCard');
+  if(!card) return;
+  const countFor = (id)=> {
+    const body = document.querySelector('#'+id);
+    return body ? Array.from(body.children || []).filter(x => x && x.id).length : 0;
+  };
+  const ops = countFor('phase16PolishGroupOps');
+  const auto = countFor('phase16PolishGroupAutomation');
+  const approval = countFor('phase16PolishGroupApproval');
+  const reports = countFor('phase16PolishGroupReports');
+  const stats = Array.from(card.querySelectorAll('.phase16polish-focusStat b'));
+  if(stats[0]) stats[0].textContent = String(ops + auto + approval + reports);
+  if(stats[1]) stats[1].textContent = String(ops);
+  if(stats[2]) stats[2].textContent = String(auto + approval);
+  if(stats[3]) stats[3].textContent = String(reports);
+}
+
+function phase20AdvSplitPatchCatalogFns_(){
+  if(typeof phase16PolishGetCatalogItems_ === 'function' && !phase16PolishGetCatalogItems_._phase20AdvSplitPatched){
+    const patched = function(root){
+      const out = [];
+      document.querySelectorAll('details.phase16polish-group[data-key]').forEach(group => {
+        const body = group.querySelector('.phase16polish-body');
+        if(!body) return;
+        const groupLabel = (group.querySelector('summary > span')?.textContent || group.dataset.key || 'Group').trim();
+        Array.from(body.children || []).forEach((el, idx) => {
+          if(!el || !el.id) return;
+          const rawTitle = (
+            el.getAttribute('data-panel-title') ||
+            el.querySelector('.card__title, .phase16-title, .phase15-title, .phase14-title, .phase13-title, .phase12-title, .phase11-title, .phase10-title, .phase9-title, .phase8-title, h2, h3, h4, .item__title')?.textContent ||
+            el.getAttribute('aria-label') ||
+            el.id
+          );
+          const title = String(rawTitle || el.id).replace(/\s+/g,' ').trim();
+          out.push({ id: el.id, title, groupKey: String(group.dataset.key || ''), groupLabel, index: idx, el });
+        });
+      });
+      return out;
+    };
+    patched._phase20AdvSplitPatched = true;
+    phase16PolishGetCatalogItems_ = patched;
+  }
+
+  if(typeof phase16PolishOpenCatalogItem_ === 'function' && !phase16PolishOpenCatalogItem_._phase20AdvSplitPatched){
+    const patchedOpen = function(root, panelId){
+      const target = document.querySelector('#'+panelId);
+      if(!target) return;
+      const group = target.closest('details.phase16polish-group');
+      if(group) group.open = true;
+      const groupKey = String(group?.dataset?.key || '');
+      const tabId = phase20AdvSplitKeyToTabId_(groupKey);
+      try{ switchTab(tabId || 'advanced-panels'); }catch{}
+      setTimeout(()=>{
+        try{ target.classList.add('phase16polish-targetflash'); }catch{}
+        try{ target.scrollIntoView({ behavior:'smooth', block:'start' }); }catch{}
+        setTimeout(()=>{ try{ target.classList.remove('phase16polish-targetflash'); }catch{} }, 1300);
+      }, 30);
+    };
+    patchedOpen._phase20AdvSplitPatched = true;
+    phase16PolishOpenCatalogItem_ = patchedOpen;
+  }
+}
+
+function phase20AdvSplitPatchPhase16Cleanup_(){
+  if(typeof phase16PolishApplyDashboardCleanup_ !== 'function' || phase20AdvSplitState_.wrappedPhase16Apply) return;
+  phase16PolishApplyDashboardCleanup_ = function(){
+    const dashboardTab = document.querySelector('#tab-dashboard');
+    const advancedTab = document.querySelector('#tab-advanced-panels');
+    const hostTab = advancedTab || dashboardTab;
+    if(!hostTab) return;
+
+    try{ phase20AdvSplitEnsureTabs_(); }catch{}
+    const root = phase16PolishEnsureDashboardRoot_(hostTab);
+    const gOps = document.querySelector('#phase16PolishGroupOps');
+    const gAuto = document.querySelector('#phase16PolishGroupAutomation');
+    const gApproval = document.querySelector('#phase16PolishGroupApproval');
+    const gReports = document.querySelector('#phase16PolishGroupReports');
+    if(!root || !gOps || !gAuto || !gApproval || !gReports) return;
+
+    const groups = {
+      ops: ['phase6DashWorkload','phase7CapacityPanel','phase8DashboardHost','phase9DashboardHost','phase11DashboardHost','phase12DashboardHost'],
+      automation: ['phase10DashboardHost','phase13DashboardHost'],
+      approval: ['phase14ApprovalQueuePanel','phase15RbacPanel','phase16TeamPanel'],
+      reports: []
+    };
+    groups.ops.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gOps));
+    groups.automation.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gAuto));
+    groups.approval.forEach(id => phase16PolishAppendIfNeeded_(document.querySelector('#'+id), gApproval));
+
+    const teamPanel = document.querySelector('#phase16TeamPanel');
+    if(teamPanel) phase16PolishAppendIfNeeded_(teamPanel, gApproval);
+
+    const sourceTabs = [dashboardTab, advancedTab].filter(Boolean);
+    sourceTabs.forEach(tab => {
+      Array.from(tab.children || []).forEach(el => {
+        if(!el || el === root) return;
+        const id = String(el.id || '');
+        if(!/^phase(6|7|8|9|10|11|12|13|14|15|16)/.test(id)) return;
+        if(root.contains(el)) return;
+        phase16PolishAppendIfNeeded_(el, gReports);
+      });
+    });
+
+    sourceTabs.forEach(tab => {
+      Array.from(tab.querySelectorAll('.card > [id^="phase"]')).forEach(el => {
+        const id = String(el.id || '');
+        if(id === 'phase16TeamPanel' || id === 'phase15RbacPanel' || id === 'phase14ApprovalQueuePanel') phase16PolishAppendIfNeeded_(el, gApproval);
+        else if(id === 'phase10DashboardHost' || id === 'phase13DashboardHost') phase16PolishAppendIfNeeded_(el, gAuto);
+        else if(/^phase(6|7)/.test(id)) phase16PolishAppendIfNeeded_(el, gOps);
+        else phase16PolishAppendIfNeeded_(el, gOps);
+      });
+    });
+
+    document.querySelectorAll('details.phase16polish-group').forEach(d => {
+      const body = d.querySelector('.phase16polish-body');
+      const badge = d.querySelector('.phase16polish-badge');
+      const count = body ? body.children.length : 0;
+      if(badge) badge.textContent = String(count);
+      d.style.display = count ? '' : 'none';
+    });
+
+    try{ phase16PolishEnsureDashboardFocusCard_(dashboardTab, root); }catch(err){ console.warn('Phase16 dashboard focus card failed', err); }
+    try{ phase16PolishRenderCatalog_(root); }catch{}
+    try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+    try{ phase20AdvSplitApply_(); }catch{}
+  };
+  phase20AdvSplitState_.wrappedPhase16Apply = true;
+}
+
+function phase20AdvSplitPatchUiMode_(){
+  if(typeof phase18UiModeApply_ === 'function' && !phase20AdvSplitState_.wrappedPhase18Apply){
+    const _orig = phase18UiModeApply_;
+    phase18UiModeApply_ = function(){
+      const r = _orig.apply(this, arguments);
+      try{ phase20AdvSplitApplyUiModeExtras_(); }catch{}
+      return r;
+    };
+    phase20AdvSplitState_.wrappedPhase18Apply = true;
+  }
+}
+
+function phase20AdvSplitApplyUiModeExtras_(){
+  const isAdv = (typeof phase18UiModeIsAdvanced_ === 'function') ? !!phase18UiModeIsAdvanced_() : true;
+  const extraTabIds = phase20AdvSplitDefs_().map(d => d.tabId);
+  extraTabIds.forEach(tabId => {
+    if(typeof phase18UiModeSetTabVisibility_ === 'function'){
+      try{ phase18UiModeSetTabVisibility_(tabId, isAdv); }catch{}
+      return;
+    }
+    const navBtn = document.querySelector(`.nav .nav__item[data-tab="${tabId}"]`);
+    const panel = document.querySelector(`.tab[data-tab="${tabId}"]`);
+    [navBtn, panel].forEach(el => {
+      if(!el) return;
+      el.style.display = isAdv ? '' : 'none';
+      el.setAttribute('aria-hidden', isAdv ? 'false' : 'true');
+    });
+  });
+
+  const activeTab = document.querySelector('.tab.is-active')?.dataset?.tab || '';
+  if(!isAdv && extraTabIds.includes(activeTab)){
+    try{ switchTab('dashboard'); }catch{}
+  }
+
+  try{ phase20AdvSplitSyncNavGroupState_(); }catch{}
+}
+
+function phase20AdvSplitWrapSwitchTab_(){
+  if(phase20AdvSplitState_.wrappedSwitch || typeof switchTab !== 'function') return;
+  const _orig = switchTab;
+  switchTab = function(tabId){
+    const nextTab = String(tabId || '');
+    const extraTabIds = phase20AdvSplitDefs_().map(d => d.tabId);
+    const isAdv = (typeof phase18UiModeIsAdvanced_ === 'function') ? !!phase18UiModeIsAdvanced_() : true;
+    if(!isAdv && extraTabIds.includes(nextTab)){
+      const r = _orig.call(this, 'dashboard');
+      try{ phase20AdvSplitSyncNavGroupState_(); }catch{}
+      try{ phase20AdvSplitSchedule_(); }catch{}
+      return r;
+    }
+    const r = _orig.apply(this, arguments);
+    try{ phase20AdvSplitSyncNavGroupState_(); }catch{}
+    try{ phase20AdvSplitSchedule_(); }catch{}
+    return r;
+  };
+  phase20AdvSplitState_.wrappedSwitch = true;
+}
+
+function phase20AdvSplitRegisterHooks_(){
+  if(window.StarkPMPostRenderHooks && typeof window.StarkPMPostRenderHooks.register === 'function'){
+    try{ window.StarkPMPostRenderHooks.register('dashboard', 'phase20-adv-split', ()=> phase20AdvSplitSchedule_(), { order: 90 }); }catch{}
+    try{ window.StarkPMPostRenderHooks.register('checklist', 'phase20-adv-split', ()=> phase20AdvSplitSchedule_(), { order: 90 }); }catch{}
+  }
+}
+
+try{ initPhase20AdvancedSplitTabs_(); }catch(err){ console.warn('Phase20 advanced split tabs init failed', err); }

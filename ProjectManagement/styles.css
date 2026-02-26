@@ -386,7 +386,70 @@ body.app-ready .app{
 .topbar__right {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 10px;
+    position: relative;
+}
+
+.topbar__btn-hidden {
+    display: none !important;
+}
+
+.topbar-menu {
+    position: relative;
+}
+
+.topbar-menu__trigger {
+    min-width: 110px;
+    justify-content: center;
+}
+
+.topbar-menu__panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 220px;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(10,18,28,0.94), rgba(10,18,28,0.90));
+    border: 1px solid rgba(56,246,255,0.2);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(155,92,255,0.08) inset;
+    z-index: 40;
+}
+
+.topbar-menu.is-open .topbar-menu__panel {
+    display: flex;
+}
+
+.topbar-menu__section {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 4px 0;
+}
+
+.topbar-menu__item {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+}
+
+.topbar-menu__item.is-danger {
+    border-color: rgba(255,90,90,0.28);
+}
+
+.topbar-menu__empty {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px dashed rgba(56,246,255,0.16);
+    color: var(--muted);
+    font-size: 12px;
 }
 
 .chip {
@@ -950,9 +1013,63 @@ body.app-ready .app{
     font-size: 14px;
 }
 
-.meter__small {
+ .meter__small {
     color: var(--muted);
     font-size: 12px;
+}
+
+.meter--with-status {
+    align-items: center;
+}
+
+.meter--with-status .meter__meta {
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+}
+
+.radar__meta--inline {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.radar__meta--inline .mini {
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(10,18,28,0.40), rgba(10,18,28,0.18));
+    border-color: rgba(56,246,255,0.12);
+    box-shadow: 0 0 0 1px rgba(155,92,255,0.05) inset;
+}
+
+.radar__meta--inline .mini__k {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+}
+
+.radar__meta--inline .mini__v {
+    margin-top: 5px;
+    font-size: 13px;
+    line-height: 1;
+}
+
+@media (max-width: 1280px) {
+    .radar__meta--inline {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .meter--with-status {
+        align-items: flex-start;
+    }
+
+    .radar__meta--inline {
+        grid-template-columns: 1fr;
+    }
 }
 
 .tasks {

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -105,28 +105,6 @@
                 </div>
             </div>
 
-            <div class="panel panel--tight radar">
-                <div class="panel__title">STATUS RADAR</div>
-                <div class="radar__screen">
-                    <div class="radar__sweep" id="radarSweep"></div>
-                    <div class="radar__blips" id="radarBlips"></div>
-                    <div class="radar__grid"></div>
-                </div>
-                <div class="radar__meta">
-                    <div class="mini">
-                        <div class="mini__k">Projects</div>
-                        <div class="mini__v" id="statProjects">0</div>
-                    </div>
-                    <div class="mini">
-                        <div class="mini__k">Milestones</div>
-                        <div class="mini__v" id="statMilestones">0</div>
-                    </div>
-                    <div class="mini">
-                        <div class="mini__k">Tasks</div>
-                        <div class="mini__v" id="statTasks">0</div>
-                    </div>
-                </div>
-            </div>
         </aside>
 
         <main class="main" data-dir="forward">
@@ -141,7 +119,7 @@
                 <div class="grid grid--3">
                     <div class="card">
                         <div class="card__label">Completion</div>
-                        <div class="meter">
+                        <div class="meter meter--with-status">
                             <div class="meter__ring" aria-hidden="true">
                                 <svg viewBox="0 0 120 120">
                                     <circle class="ring-bg" cx="60" cy="60" r="46"></circle>
@@ -152,6 +130,20 @@
                             <div class="meter__meta">
                                 <div class="meter__big" id="doneText">0 / 0</div>
                                 <div class="meter__small">Tasks complete</div>
+                                <div class="radar__meta radar__meta--inline" aria-label="Status summary">
+                                    <div class="mini">
+                                        <div class="mini__k">Projects</div>
+                                        <div class="mini__v" id="statProjects">0</div>
+                                    </div>
+                                    <div class="mini">
+                                        <div class="mini__k">Milestones</div>
+                                        <div class="mini__v" id="statMilestones">0</div>
+                                    </div>
+                                    <div class="mini">
+                                        <div class="mini__k">Tasks</div>
+                                        <div class="mini__v" id="statTasks">0</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -490,7 +482,7 @@
         </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/animejs/dist/bundles/anime.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/animejs@4.0.1/dist/bundles/anime.umd.min.js"></script>
     <script src="./app.js"></script>
 </body>
 </html>

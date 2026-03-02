@@ -25,10 +25,12 @@ function switchTab(tabName){
   const nextPanel = document.querySelector(`.tab[data-tab="${tabName}"]`);
   if(!nextPanel) return;
 
-  // Determine direction based on nav order.
-  const order = ["dashboard","projects","milestones","checklist","import"];
-  const currentIndex = Math.max(0, order.indexOf(currentName));
-  const nextIndex = Math.max(0, order.indexOf(tabName));
+  // Determine direction from the live nav order so injected workspace tabs animate consistently.
+  const order = Array.from(document.querySelectorAll('.nav__item'))
+    .map(btn => btn && btn.dataset ? String(btn.dataset.tab || '') : '')
+    .filter(Boolean);
+  const currentIndex = Math.max(0, order.indexOf(String(currentName || '')));
+  const nextIndex = Math.max(0, order.indexOf(String(tabName || '')));
   const dir = (nextIndex >= currentIndex) ? "forward" : "back";
 
   // Update nav state immediately.

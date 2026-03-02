@@ -1946,11 +1946,275 @@ function phase5EnsureStyles_(){
     .phase5-kempty{padding:10px;border:1px dashed rgba(255,255,255,.08);border-radius:10px;font-size:12px;opacity:.7;text-align:center}
 
     .phase5-recur-badge{border-color:rgba(146,255,176,.25)}
-    .phase5-projectSettings .row.row--3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-    @media (max-width: 980px){
-      .phase5-kanban__grid{grid-template-columns:1fr}
-      .phase5-projectSettings .row.row--3{grid-template-columns:1fr}
-    }
+
+.phase5-checklistCard{overflow:visible}
+.phase5-checklistDeck{
+  position:relative;
+  margin:2px 0 12px;
+  padding:14px;
+  border:1px solid rgba(56,246,255,.14);
+  border-radius:16px;
+  background:
+    linear-gradient(180deg, rgba(11,19,30,.72), rgba(10,18,28,.46)),
+    radial-gradient(560px 180px at 8% 0%, rgba(56,246,255,.12), transparent 58%);
+  box-shadow:0 0 0 1px rgba(155,92,255,.06) inset, 0 16px 36px rgba(0,0,0,.18);
+}
+.phase5-checklistDeck::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  pointer-events:none;
+  background:linear-gradient(120deg, rgba(56,246,255,.08), transparent 36%, rgba(155,92,255,.07) 70%, transparent 100%);
+  opacity:.9;
+}
+.phase5-checklistDeck > *{position:relative;z-index:1}
+.phase5-checklistDeck__top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
+.phase5-checklistDeck__eyebrow{
+  font-size:11px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:rgba(198,232,255,.72);
+  margin-bottom:6px;
+}
+.phase5-checklistDeck__title{
+  font-family:var(--mono);
+  font-size:15px;
+  letter-spacing:.06em;
+  color:rgba(233,245,255,.96);
+  line-height:1.35;
+}
+.phase5-checklistDeck__meta{
+  margin-top:6px;
+  color:rgba(159,186,212,.9);
+  font-size:12px;
+  line-height:1.5;
+  max-width:820px;
+}
+.phase5-checklistDeck__mode{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 12px;
+  min-height:34px;
+  border-radius:999px;
+  border:1px solid rgba(56,246,255,.18);
+  background:rgba(10,18,28,.5);
+  color:rgba(233,245,255,.92);
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  box-shadow:0 0 0 1px rgba(155,92,255,.08) inset;
+}
+.phase5-checklistDeck__stats{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+.phase5-checkStat{
+  min-width:0;
+  padding:11px 12px;
+  border-radius:14px;
+  border:1px solid rgba(56,246,255,.12);
+  background:linear-gradient(180deg, rgba(10,18,28,.54), rgba(10,18,28,.22));
+  box-shadow:0 0 0 1px rgba(255,255,255,.03) inset;
+}
+.phase5-checkStat__k{
+  font-size:10px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:rgba(159,186,212,.76);
+  margin-bottom:8px;
+}
+.phase5-checkStat__v{
+  font-family:var(--mono);
+  font-size:18px;
+  line-height:1;
+  color:rgba(239,247,255,.97);
+  margin-bottom:6px;
+}
+.phase5-checkStat__s{
+  font-size:11px;
+  color:rgba(159,186,212,.82);
+  line-height:1.35;
+  min-height:15px;
+}
+.phase5-checklistDeck__chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:12px;
+}
+.phase5-checklistDeck__chips .badge{
+  background:rgba(5,11,20,.28);
+  border-color:rgba(56,246,255,.18);
+}
+.phase5-checklistDeck__foot{
+  margin-top:12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px 14px;
+  font-size:12px;
+  color:rgba(185,214,236,.9);
+  line-height:1.5;
+}
+.phase5-checklistDeck__foot b{
+  color:rgba(239,247,255,.96);
+  font-weight:600;
+}
+#tab-checklist .phase3-toolbar,
+#tab-checklist .phase5-toolbar{
+  padding:10px 12px;
+  border:1px solid rgba(56,246,255,.12);
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(10,18,28,.34), rgba(10,18,28,.18));
+  box-shadow:0 0 0 1px rgba(155,92,255,.05) inset;
+}
+#tab-checklist .phase5-toolbar{margin:0 0 10px}
+#tab-checklist .tasks{gap:12px}
+#tab-checklist .task{
+  position:relative;
+  padding:13px 13px;
+  border-radius:16px;
+  background:linear-gradient(180deg, rgba(10,18,28,.34), rgba(10,18,28,.22));
+  border-color:rgba(56,246,255,.12);
+  box-shadow:0 0 0 1px rgba(155,92,255,.03) inset;
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+#tab-checklist .task:hover{
+  transform:translateY(-1px);
+  border-color:rgba(56,246,255,.24);
+  box-shadow:0 0 0 1px rgba(56,246,255,.08) inset, 0 12px 28px rgba(0,0,0,.16);
+  background:linear-gradient(180deg, rgba(12,22,35,.42), rgba(10,18,28,.26));
+}
+#tab-checklist .task.is-done{
+  border-color:rgba(41,255,176,.18);
+  background:linear-gradient(180deg, rgba(14,28,28,.42), rgba(10,18,28,.24));
+  box-shadow:0 0 0 1px rgba(41,255,176,.06) inset;
+}
+#tab-checklist .task__body{min-width:0}
+#tab-checklist .task__head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+#tab-checklist .task__title{
+  font-size:13px;
+  line-height:1.4;
+  color:rgba(236,246,255,.96);
+  word-break:break-word;
+}
+#tab-checklist .task__state{
+  flex:0 0 auto;
+  padding:5px 9px;
+  border-radius:999px;
+  border:1px solid rgba(56,246,255,.16);
+  background:rgba(10,18,28,.4);
+  color:rgba(205,233,255,.9);
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  line-height:1;
+}
+#tab-checklist .task__state.is-high{
+  border-color:rgba(255,214,102,.26);
+  color:rgba(255,232,156,.92);
+}
+#tab-checklist .task__state.is-blocker{
+  border-color:rgba(255,96,149,.28);
+  color:rgba(255,182,206,.94);
+}
+#tab-checklist .task__state.is-done{
+  border-color:rgba(41,255,176,.28);
+  color:rgba(181,255,214,.94);
+}
+#tab-checklist .task__meta{
+  gap:8px;
+  align-items:center;
+}
+#tab-checklist .task__actions{
+  padding:4px;
+  border-radius:14px;
+  border:1px solid rgba(56,246,255,.1);
+  background:rgba(6,12,20,.24);
+  box-shadow:0 0 0 1px rgba(255,255,255,.02) inset;
+  align-self:flex-start;
+}
+#tab-checklist .iconbtn{
+  transition:transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+#tab-checklist .iconbtn:hover{
+  transform:translateY(-1px);
+  background:rgba(10,18,28,.34);
+  box-shadow:0 0 16px rgba(56,246,255,.08);
+}
+#tab-checklist .steps{
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px dashed rgba(56,246,255,.18);
+}
+#tab-checklist .steps.is-open{max-height:860px}
+#tab-checklist .steps__list{
+  padding:10px;
+  border-radius:14px;
+  border:1px solid rgba(56,246,255,.1);
+  background:linear-gradient(180deg, rgba(0,0,0,.14), rgba(0,0,0,.06));
+}
+#tab-checklist .steps__add{
+  margin-top:12px;
+  padding:10px 10px 0;
+  border-top:1px dashed rgba(56,246,255,.12);
+}
+.phase5-checklistEmpty{
+  padding:18px;
+  border-radius:16px;
+  border:1px dashed rgba(56,246,255,.18);
+  background:
+    linear-gradient(180deg, rgba(10,18,28,.34), rgba(10,18,28,.18)),
+    radial-gradient(420px 140px at 12% 0%, rgba(56,246,255,.08), transparent 62%);
+  box-shadow:0 0 0 1px rgba(155,92,255,.05) inset;
+}
+.phase5-checklistEmpty--compact{padding:16px}
+.phase5-checklistEmpty__eyebrow{
+  font-size:10px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:rgba(183,219,245,.7);
+  margin-bottom:8px;
+}
+.phase5-checklistEmpty__title{
+  font-family:var(--mono);
+  font-size:15px;
+  letter-spacing:.05em;
+  color:rgba(239,247,255,.96);
+  margin-bottom:8px;
+}
+.phase5-checklistEmpty__meta{
+  font-size:12px;
+  line-height:1.6;
+  color:rgba(159,186,212,.88);
+  max-width:720px;
+}
+@media (max-width: 1180px){
+  .phase5-checklistDeck__stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width: 820px){
+  .phase5-checklistDeck__top{flex-direction:column}
+  .phase5-checklistDeck__mode{min-height:0}
+}
+@media (max-width: 640px){
+  .phase5-checklistDeck{padding:12px}
+  .phase5-checklistDeck__stats{grid-template-columns:1fr}
+  #tab-checklist .task__head{flex-direction:column}
+  #tab-checklist .task__state{align-self:flex-start}
+  #tab-checklist .phase3-toolbar,
+  #tab-checklist .phase5-toolbar{padding:10px}
+}
   `;
   document.head.appendChild(st);
 }
@@ -2252,6 +2516,51 @@ function phase5GetChecklistContext_(){
 function phase5EnsureChecklistUi_(){
   const tasksCard = document.querySelector('#taskList')?.closest('.card');
   const taskList = document.querySelector('#taskList');
+  if(tasksCard){
+    tasksCard.classList.add('phase5-checklistCard');
+    if(!document.querySelector('#phase5ChecklistDeck')){
+      const deck = document.createElement('div');
+      deck.id = 'phase5ChecklistDeck';
+      deck.className = 'phase5-checklistDeck';
+      deck.innerHTML = `
+        <div class="phase5-checklistDeck__top">
+          <div>
+            <div class="phase5-checklistDeck__eyebrow">Execution Queue</div>
+            <div class="phase5-checklistDeck__title" id="phase5ChecklistDeckTitle">Awaiting active project + milestone</div>
+            <div class="phase5-checklistDeck__meta" id="phase5ChecklistDeckMeta">Select a live scope to load the checklist command lane, scan readiness, and tighten execution.</div>
+          </div>
+          <div class="phase5-checklistDeck__mode" id="phase5ChecklistDeckMode">STANDBY</div>
+        </div>
+        <div class="phase5-checklistDeck__stats">
+          <div class="phase5-checkStat">
+            <div class="phase5-checkStat__k">Visible</div>
+            <div class="phase5-checkStat__v" id="phase5ChecklistStatVisible">0</div>
+            <div class="phase5-checkStat__s" id="phase5ChecklistStatVisibleSub">Tasks in view</div>
+          </div>
+          <div class="phase5-checkStat">
+            <div class="phase5-checkStat__k">Open</div>
+            <div class="phase5-checkStat__v" id="phase5ChecklistStatOpen">0</div>
+            <div class="phase5-checkStat__s" id="phase5ChecklistStatOpenSub">Pending execution</div>
+          </div>
+          <div class="phase5-checkStat">
+            <div class="phase5-checkStat__k">Blocked</div>
+            <div class="phase5-checkStat__v" id="phase5ChecklistStatBlocked">0</div>
+            <div class="phase5-checkStat__s" id="phase5ChecklistStatBlockedSub">Waiting on dependencies</div>
+          </div>
+          <div class="phase5-checkStat">
+            <div class="phase5-checkStat__k">Done</div>
+            <div class="phase5-checkStat__v" id="phase5ChecklistStatDone">0</div>
+            <div class="phase5-checkStat__s" id="phase5ChecklistStatDoneSub">Closed tasks</div>
+          </div>
+        </div>
+        <div class="phase5-checklistDeck__chips" id="phase5ChecklistDeckChips"></div>
+        <div class="phase5-checklistDeck__foot" id="phase5ChecklistDeckFoot"></div>
+      `;
+      const anchor = document.querySelector('#phase3TaskToolbar') || taskList || tasksCard.firstElementChild?.nextElementSibling || tasksCard.lastElementChild || null;
+      if(anchor && anchor.parentElement === tasksCard) tasksCard.insertBefore(deck, anchor);
+      else tasksCard.appendChild(deck);
+    }
+  }
   if(tasksCard && taskList && !document.querySelector('#phase5ChecklistToolbar')){
     const tb = document.createElement('div');
     tb.id = 'phase5ChecklistToolbar';
@@ -2345,8 +2654,111 @@ function phase5EnsureChecklistUi_(){
   phase5SyncChecklistViewUi_();
 }
 
+
+function phase5RenderChecklistDeck_(){
+  const ctx = phase5GetChecklistContext_();
+  const p = ctx && ctx.p;
+  const m = ctx && ctx.m;
+  const titleEl = document.querySelector('#phase5ChecklistDeckTitle');
+  const metaEl = document.querySelector('#phase5ChecklistDeckMeta');
+  const modeEl = document.querySelector('#phase5ChecklistDeckMode');
+  const chipsEl = document.querySelector('#phase5ChecklistDeckChips');
+  const footEl = document.querySelector('#phase5ChecklistDeckFoot');
+  const visibleEl = document.querySelector('#phase5ChecklistStatVisible');
+  const visibleSubEl = document.querySelector('#phase5ChecklistStatVisibleSub');
+  const openEl = document.querySelector('#phase5ChecklistStatOpen');
+  const openSubEl = document.querySelector('#phase5ChecklistStatOpenSub');
+  const blockedEl = document.querySelector('#phase5ChecklistStatBlocked');
+  const blockedSubEl = document.querySelector('#phase5ChecklistStatBlockedSub');
+  const doneEl = document.querySelector('#phase5ChecklistStatDone');
+  const doneSubEl = document.querySelector('#phase5ChecklistStatDoneSub');
+  if(!titleEl || !metaEl || !modeEl || !chipsEl || !footEl || !visibleEl || !openEl || !blockedEl || !doneEl) return;
+
+  const viewLabel = phase5State_.checklistView === 'kanban' ? 'KANBAN' : 'LIST';
+  modeEl.textContent = (!p || !m) ? 'STANDBY' : viewLabel;
+
+  if(!p || !m){
+    titleEl.textContent = 'Awaiting active project + milestone';
+    metaEl.textContent = 'Select a live scope to load the checklist command lane, scan readiness, and tighten execution.';
+    visibleEl.textContent = '0';
+    openEl.textContent = '0';
+    blockedEl.textContent = '0';
+    doneEl.textContent = '0';
+    if(visibleSubEl) visibleSubEl.textContent = 'Tasks in view';
+    if(openSubEl) openSubEl.textContent = 'Pending execution';
+    if(blockedSubEl) blockedSubEl.textContent = 'Waiting on dependencies';
+    if(doneSubEl) doneSubEl.textContent = 'Closed tasks';
+    chipsEl.innerHTML = '<span class="badge">SELECT PROJECT</span><span class="badge">SELECT MILESTONE</span>';
+    footEl.innerHTML = '<span>Checklist controls, filters, and queue signals wake up after a project and milestone are active.</span>';
+    return;
+  }
+
+  const tasks = Array.isArray(m.tasks) ? m.tasks : [];
+  const visibleIds = [];
+  const blockedCount = tasks.filter(t => {
+    try{ return typeof phase4IsTaskBlocked_ === 'function' ? phase4IsTaskBlocked_(t, m) : false; }catch{ return false; }
+  }).length;
+  const overdueCount = tasks.filter(t => {
+    try{ return t && t.dueAt && typeof phase4DueBucket_ === 'function' && phase4DueBucket_(t.dueAt) === 'overdue'; }catch{ return false; }
+  }).length;
+  const recurringCount = tasks.filter(t => Number(t?.recurrenceDays || 0) > 0).length;
+  const doneCount = tasks.filter(t => !!t.done).length;
+  const openCount = Math.max(0, tasks.length - doneCount);
+  const visibleCount = tasks.filter(t => {
+    try{
+      const match = typeof phase3TaskMatchesFilter_ === 'function' ? phase3TaskMatchesFilter_(t) : true;
+      if(match && t && t.id) visibleIds.push(t.id);
+      return match;
+    }catch{
+      if(t && t.id) visibleIds.push(t.id);
+      return true;
+    }
+  }).length;
+
+  const selectedCount = Array.from(phase3State_.taskSelection || []).filter(id => visibleIds.includes(id) || tasks.some(t => t && t.id === id)).length;
+  const activeFilters = [
+    phase3State_.taskQuery ? 'Search' : '',
+    phase3State_.taskStatus !== 'all' ? `Status:${phase3State_.taskStatus}` : '',
+    phase3State_.taskSeverity !== 'all' ? `Severity:${phase3State_.taskSeverity}` : '',
+    (typeof phase4State_ !== 'undefined' && phase4State_?.taskDueFilter && phase4State_.taskDueFilter !== 'all') ? `Due:${phase4State_.taskDueFilter}` : '',
+    (typeof phase4State_ !== 'undefined' && phase4State_?.blockedOnly) ? 'Blocked only' : '',
+  ].filter(Boolean);
+
+  titleEl.textContent = `${p.name} • ${m.title}`;
+  metaEl.textContent = `${visibleCount} of ${tasks.length} task${tasks.length === 1 ? '' : 's'} in view, with blockers, overdue work, and selection state surfaced before you act.`;
+  visibleEl.textContent = String(visibleCount);
+  openEl.textContent = String(openCount);
+  blockedEl.textContent = String(blockedCount);
+  doneEl.textContent = String(doneCount);
+  if(visibleSubEl) visibleSubEl.textContent = tasks.length ? `${tasks.length - visibleCount} hidden by filters` : 'Tasks in view';
+  if(openSubEl) openSubEl.textContent = overdueCount ? `${overdueCount} overdue` : 'Ready / in progress';
+  if(blockedSubEl) blockedSubEl.textContent = blockedCount ? 'Dependency pressure live' : 'No active blockers';
+  if(doneSubEl) doneSubEl.textContent = recurringCount ? `${recurringCount} recurring` : 'Closed tasks';
+
+  const chips = [
+    `<span class="badge">${viewLabel} VIEW</span>`,
+    `<span class="badge">FILTERS ${activeFilters.length}</span>`,
+    `<span class="badge">SELECTED ${selectedCount}</span>`,
+    `<span class="badge">${doneCount}/${tasks.length || 0} COMPLETE</span>`,
+  ];
+  if(p.archived) chips.push('<span class="badge badge--warn">ARCHIVED PROJECT</span>');
+  if(overdueCount) chips.push(`<span class="badge badge--warn">OVERDUE ${overdueCount}</span>`);
+  if(blockedCount) chips.push(`<span class="badge badge--warn">BLOCKED ${blockedCount}</span>`);
+  if(recurringCount) chips.push(`<span class="badge">RECUR ${recurringCount}</span>`);
+  chipsEl.innerHTML = chips.join('');
+
+  const filterLabel = activeFilters.length ? activeFilters.join(' • ') : 'No active filters';
+  const selectionLabel = selectedCount ? `${selectedCount} task${selectedCount === 1 ? '' : 's'} selected for bulk actions.` : 'No task selection in play.';
+  footEl.innerHTML = `
+    <span><b>Scope:</b> ${escapeHtml(p.name)} → ${escapeHtml(m.title)}</span>
+    <span><b>Filters:</b> ${escapeHtml(filterLabel)}</span>
+    <span><b>Selection:</b> ${escapeHtml(selectionLabel)}</span>
+  `;
+}
+
 function phase5PostRenderChecklist_(){
   phase5EnsureChecklistUi_();
+  phase5RenderChecklistDeck_();
 
   const ctx = phase5GetChecklistContext_();
   const p = ctx && ctx.p;

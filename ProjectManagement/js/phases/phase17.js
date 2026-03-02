@@ -55,7 +55,7 @@ function phase17PortfolioEnsureStyles_(){
     #tab-portfolio .phase17-kpi__sub{margin-top:4px;font-size:11px;opacity:.72}
     #tab-portfolio .phase17-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:8px;align-items:end}
     #tab-portfolio .phase17-controls .field{margin:0}
-    #tab-portfolio .phase17-input,#tab-portfolio .phase17-select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.18);color:inherit}
+    #tab-portfolio .phase17-input,#tab-portfolio .phase17-select{width:100%;min-width:0}
     #tab-portfolio .phase17-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(280px,.9fr);gap:12px;align-items:start}
     #tab-portfolio .phase17-list{display:grid;gap:8px;max-height:65vh;overflow:auto;padding-right:2px}
     #tab-portfolio .phase17-row{display:grid;grid-template-columns:minmax(170px,1.25fr) auto auto auto auto auto auto;gap:8px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:rgba(255,255,255,.012)}
@@ -82,8 +82,7 @@ function phase17PortfolioEnsureStyles_(){
     #tab-portfolio .phase17-sideItemRow{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:6px}
     #tab-portfolio .phase17-empty{padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;font-size:12px;opacity:.8}
     #tab-portfolio .phase17-rowActions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
-    #tab-portfolio .phase17-btn{padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.02);color:inherit;cursor:pointer;font-size:11px}
-    #tab-portfolio .phase17-btn:hover{background:rgba(255,255,255,.05)}
+    #tab-portfolio .phase17-btn{white-space:nowrap}
     /* Milestone 3: portfolio rhythm alignment */
     #tab-portfolio .phase17-portfolio-wrap{gap:14px}
     #tab-portfolio .phase17-summary{gap:12px}
@@ -101,7 +100,7 @@ function phase17PortfolioEnsureStyles_(){
     #tab-portfolio .phase17-sideCard, #tab-portfolio .phase17-sideList{gap:10px}
     #tab-portfolio .phase17-sideItem{padding:10px;border-radius:12px}
     #tab-portfolio .phase17-sideItemMeta{font-size:11px;line-height:1.35}
-    #tab-portfolio .phase17-btn{padding:6px 10px;border-radius:9px}
+    #tab-portfolio .phase17-btn{justify-self:flex-start}
     @media (max-width:1300px){ #tab-portfolio .phase17-row{grid-template-columns:minmax(170px,1.2fr) auto auto auto auto auto; } #tab-portfolio .phase17-rowActions{grid-column:1/-1;justify-content:flex-start;} }
     @media (max-width:1100px){ #tab-portfolio .phase17-summary{grid-template-columns:repeat(2,minmax(0,1fr));} #tab-portfolio .phase17-controls{grid-template-columns:1fr 1fr;align-items:end} #tab-portfolio .phase17-grid{grid-template-columns:1fr} #tab-portfolio .phase17-row{grid-template-columns:1fr 1fr;align-items:start} #tab-portfolio .phase17-rowStat{align-items:flex-start} #tab-portfolio .phase17-pillset{justify-content:flex-start} }
   `;
@@ -110,21 +109,23 @@ function phase17PortfolioEnsureStyles_(){
 
 function phase17PortfolioEnsureTab_(){
   const sidebarNav = document.querySelector('.nav');
-  const dashBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="dashboard"]');
+  const coreCluster = sidebarNav && sidebarNav.querySelector('#navClusterCore');
+  const workspaceCluster = sidebarNav && sidebarNav.querySelector('#navClusterWorkspace');
+  const navHost = coreCluster || sidebarNav;
+  const dashBtn = navHost && navHost.querySelector('.nav__item[data-tab="dashboard"]');
   const advBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="advanced-panels"]');
   const dashboardTab = document.querySelector('#tab-dashboard');
-  if(!sidebarNav || !dashboardTab || !dashboardTab.parentElement) return;
+  if(!navHost || !dashboardTab || !dashboardTab.parentElement) return;
 
-  let navBtn = sidebarNav.querySelector('.nav__item[data-tab="portfolio"]');
+  let navBtn = navHost.querySelector('.nav__item[data-tab="portfolio"]') || document.querySelector('.nav__item[data-tab="portfolio"]');
   if(!navBtn){
     navBtn = document.createElement('button');
     navBtn.type = 'button';
     navBtn.className = 'nav__item';
     navBtn.dataset.tab = 'portfolio';
     navBtn.innerHTML = '<span class="nav__icon">▤</span><span class="nav__text">Portfolio</span>';
-    if(advBtn && advBtn.parentElement) advBtn.insertAdjacentElement('beforebegin', navBtn);
-    else if(dashBtn && dashBtn.parentElement) dashBtn.insertAdjacentElement('afterend', navBtn);
-    else sidebarNav.appendChild(navBtn);
+    if(dashBtn && dashBtn.parentElement) dashBtn.insertAdjacentElement('afterend', navBtn);
+    else navHost.appendChild(navBtn);
   }
 
   let panel = document.querySelector('#tab-portfolio');
@@ -454,11 +455,11 @@ function phase17PortfolioRender_(){
         <div class="phase17-controls">
           <label class="field">
             <span class="field__label">Search</span>
-            <input id="phase17PortfolioSearch" class="phase17-input" type="search" placeholder="Search project, tag, status..." value="${escapeHtml(String(phase17PortfolioState_.query || ''))}" />
+            <input id="phase17PortfolioSearch" class="input phase17-input" type="search" placeholder="Search project, tag, status..." value="${escapeHtml(String(phase17PortfolioState_.query || ''))}" />
           </label>
           <label class="field">
             <span class="field__label">Status</span>
-            <select id="phase17PortfolioStatus" class="phase17-select">
+            <select id="phase17PortfolioStatus" class="select phase17-select">
               <option value="all" ${statusFilter==='all'?'selected':''}>All</option>
               <option value="active" ${statusFilter==='active'?'selected':''}>Active</option>
               <option value="paused" ${statusFilter==='paused'?'selected':''}>Paused</option>
@@ -467,7 +468,7 @@ function phase17PortfolioRender_(){
           </label>
           <label class="field">
             <span class="field__label">Sort</span>
-            <select id="phase17PortfolioSort" class="phase17-select">
+            <select id="phase17PortfolioSort" class="select phase17-select">
               <option value="risk" ${sortBy==='risk'?'selected':''}>Risk (worst first)</option>
               <option value="due" ${sortBy==='due'?'selected':''}>Next due date</option>
               <option value="progress" ${sortBy==='progress'?'selected':''}>Progress %</option>
@@ -516,9 +517,9 @@ function phase17PortfolioRender_(){
                       <span class="phase17-pill">Next Due ${escapeHtml(phase17PortfolioFmtDate_(r.nextDueTs))}</span>
                     </div>
                     <div class="phase17-rowActions" style="margin-top:6px">
-                      <button type="button" class="phase17-btn" data-phase17-action="focus" data-project-id="${escapeHtml(r.id)}">Focus Dashboard</button>
-                      <button type="button" class="phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open Project</button>
-                      <button type="button" class="phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(r.id)}">Open Checklist</button>
+                      <button type="button" class="btn btn--ghost btn--compact phase17-btn" data-phase17-action="focus" data-project-id="${escapeHtml(r.id)}">Focus Dashboard</button>
+                      <button type="button" class="btn btn--ghost btn--compact phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open Project</button>
+                      <button type="button" class="btn btn--ghost btn--compact phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(r.id)}">Open Checklist</button>
                     </div>
                   </div>
                 </div>
@@ -540,7 +541,7 @@ function phase17PortfolioRender_(){
                       <span class="phase17-pill">Overdue ${escapeHtml(String(r.overdue))}</span>
                       <span class="phase17-pill">Blocker ${escapeHtml(String(r.blockerOpen))}</span>
                     </div>
-                    <button type="button" class="phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open</button>
+                    <button type="button" class="btn btn--ghost btn--compact phase17-btn" data-phase17-action="open-project" data-project-id="${escapeHtml(r.id)}">Open</button>
                   </div>
                 </div>
               `).join('') : `<div class="phase17-empty">Risk queue is clear. Add more projects/tasks or due dates to surface risk signals.</div>`}
@@ -556,7 +557,7 @@ function phase17PortfolioRender_(){
                   <div class="phase17-sideItemMeta">${escapeHtml(String(x.p?.name || 'Project'))} • ${escapeHtml(String(x.m?.title || 'Milestone'))}</div>
                   <div class="phase17-sideItemRow">
                     <span class="badge">${escapeHtml(phase17PortfolioFmtDate_(x.dueAt))}</span>
-                    <button type="button" class="phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(String(x.p?.id || ''))}">Open</button>
+                    <button type="button" class="btn btn--ghost btn--compact phase17-btn" data-phase17-action="open-checklist" data-project-id="${escapeHtml(String(x.p?.id || ''))}">Open</button>
                   </div>
                 </div>
               `).join('') : `<div class="phase17-empty">No due dates detected yet. Use task due dates to enable timeline visibility here.</div>`}

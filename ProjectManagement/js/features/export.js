@@ -74,6 +74,13 @@ function pushPmTextBlock_(lines, key, value){
   lines.push(`@pm ${key}: ${v.trim()}`);
 }
 
+function formatExportModuleStatus_(status){
+  const normalized = String(status || "todo").trim().toLowerCase();
+  if(normalized === "doing") return "active";
+  if(normalized === "done") return "done";
+  return "todo";
+}
+
 function serializeProjectToMarkdown_(p){
   const lines = [];
   lines.push("# " + p.name);
@@ -88,7 +95,8 @@ function serializeProjectToMarkdown_(p){
     for(const mod of p.modules){
       const header = formatExportModuleHeader_(mod, mi);
       lines.push(header);
-      lines.push(("@pm module status=" + mod.status + " tag=" + quotePmValue_(mod.tag)).trim());
+      lines.push(("@pm module status=" + formatExportModuleStatus_(mod.status) + " tag=" + quotePmValue_(mod.tag)).trim());
+      pushPmTextBlock_(lines, "desc", mod.desc);
       lines.push("");
 
       for(const ms of (Array.isArray(mod?.milestones) ? mod.milestones : [])){
@@ -152,7 +160,8 @@ function serializeProjectToText_(p){
     for(const mod of p.modules){
       const header = formatExportModuleHeader_(mod, mi);
       lines.push(header);
-      lines.push(("@pm module status=" + mod.status + " tag=" + quotePmValue_(mod.tag)).trim());
+      lines.push(("@pm module status=" + formatExportModuleStatus_(mod.status) + " tag=" + quotePmValue_(mod.tag)).trim());
+      pushPmTextBlock_(lines, "desc", mod.desc);
       lines.push("");
 
       for(const ms of (Array.isArray(mod?.milestones) ? mod.milestones : [])){

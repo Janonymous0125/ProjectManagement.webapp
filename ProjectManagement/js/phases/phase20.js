@@ -56,12 +56,12 @@ function phase20AdvSplitEnsureStyles_(){
     .phase20advsplit-empty{font-size:11px;opacity:.72;padding:6px 0}
 
     /* Sidebar visual grouping: nest advanced category tabs under Advanced Panels */
-    .phase20advsplit-navgroup{display:grid;gap:8px}
-    .phase20advsplit-navgroup > .nav__item[data-tab="advanced-panels"]{position:relative;padding-right:30px}
+    .phase20advsplit-navgroup{display:grid;gap:10px}
+    .phase20advsplit-navgroup > .nav__item[data-tab="advanced-panels"]{position:relative;margin-left:0;padding-right:34px}
     .phase20advsplit-navgroup > .nav__item[data-tab="advanced-panels"]::before{
       content:"▾";
       position:absolute;
-      right:10px;
+      right:12px;
       top:50%;
       transform:translateY(-50%);
       font-size:11px;
@@ -79,40 +79,48 @@ function phase20AdvSplitEnsureStyles_(){
       display:grid;
       gap:8px;
       margin-top:-2px;
-      margin-left:10px;
-      padding:10px 10px 10px 12px;
-      border-radius:12px;
-      background:linear-gradient(180deg, rgba(10,18,28,0.18), rgba(10,18,28,0.08));
+      margin-left:0;
+      padding:12px 12px 12px 14px;
+      border-radius:14px;
+      background:linear-gradient(180deg, rgba(8,14,22,0.48), rgba(8,14,22,0.20));
       border:1px solid rgba(56,246,255,0.07);
-      border-left-color: rgba(56,246,255,0.16);
-      box-shadow: inset 0 0 0 1px rgba(155,92,255,0.03);
+      border-left-color: rgba(56,246,255,0.14);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
       position:relative;
     }
     .phase20advsplit-navgroup.is-collapsed .phase20advsplit-navsub{display:none !important}
     .phase20advsplit-navsub::before{
       content:"";
       position:absolute;
-      left:8px;
-      top:10px;
-      bottom:10px;
+      left:9px;
+      top:12px;
+      bottom:12px;
       width:1px;
-      background:linear-gradient(180deg, rgba(56,246,255,0.16), rgba(155,92,255,0.08));
-      opacity:.9;
+      background:linear-gradient(180deg, rgba(56,246,255,0.15), rgba(155,92,255,0.06));
+      opacity:.88;
       pointer-events:none;
     }
     .phase20advsplit-navchild{
       margin-left:0;
-      padding:10px 11px;
-      border-radius:10px;
-      background:rgba(10,18,28,0.18);
+      padding:10px 12px;
+      border-radius:12px;
+      background:linear-gradient(180deg, rgba(10,18,28,0.24), rgba(10,18,28,0.12));
       border-color:rgba(56,246,255,0.08);
     }
-    .phase20advsplit-navchild .nav__text{font-size:11px; letter-spacing:0.07em}
-    .phase20advsplit-navchild .nav__icon{opacity:.75; font-size:12px}
+    .phase20advsplit-navchild .nav__text{font-size:10px;letter-spacing:0.12em;text-transform:uppercase}
+    .phase20advsplit-navchild .nav__icon{opacity:.72;font-size:12px}
     .phase20advsplit-navgroup.is-child-active > .nav__item[data-tab="advanced-panels"]{
       border-color: rgba(56,246,255,0.24);
-      box-shadow: 0 0 0 1px rgba(155,92,255,0.07) inset, 0 0 14px rgba(56,246,255,0.08);
-      background: rgba(10,18,28,0.32);
+      box-shadow: 0 0 0 1px rgba(155,92,255,0.07) inset, 0 10px 24px rgba(2,17,26,0.26), 0 0 14px rgba(56,246,255,0.07);
+      background: linear-gradient(180deg, rgba(10,18,28,0.42), rgba(10,18,28,0.26));
+    }
+    @media (max-width:820px){
+      .phase20advsplit-navsub{padding:10px 10px 10px 12px}
+      .phase20advsplit-navsub::before{left:8px;top:10px;bottom:10px}
+      .phase20advsplit-navchild{padding:9px 10px}
+    }
+    @media (max-width:560px){
+      .phase20advsplit-navsub{gap:6px}
     }
   `;
   document.head.appendChild(st);
@@ -120,6 +128,7 @@ function phase20AdvSplitEnsureStyles_(){
 
 function phase20AdvSplitEnsureNavGroup_(sidebarNav, advancedBtn){
   if(!sidebarNav || !advancedBtn) return null;
+  const workspaceCluster = sidebarNav.querySelector('#navClusterWorkspace') || sidebarNav;
   let group = sidebarNav.querySelector('#phase20AdvSplitNavGroup');
   let sub = sidebarNav.querySelector('#phase20AdvSplitNavSub');
 
@@ -135,9 +144,9 @@ function phase20AdvSplitEnsureNavGroup_(sidebarNav, advancedBtn){
   }
 
   if(advancedBtn.parentElement !== group){
-    if(group.parentElement !== sidebarNav){
-      if(advancedBtn.parentElement === sidebarNav) advancedBtn.insertAdjacentElement('beforebegin', group);
-      else sidebarNav.appendChild(group);
+    if(group.parentElement !== workspaceCluster){
+      if(advancedBtn.parentElement === workspaceCluster) advancedBtn.insertAdjacentElement('beforebegin', group);
+      else workspaceCluster.appendChild(group);
     }
     group.insertAdjacentElement('afterbegin', advancedBtn);
   }
@@ -153,8 +162,9 @@ function phase20AdvSplitEnsureNavGroup_(sidebarNav, advancedBtn){
   if(!sub.id) sub.id = 'phase20AdvSplitNavSub';
   advancedBtn.setAttribute('aria-controls', sub.id);
   advancedBtn.setAttribute('aria-haspopup', 'true');
+  if(workspaceCluster && workspaceCluster.dataset) workspaceCluster.dataset.populated = 'true';
 
-  return { group, sub };
+  return { group, sub, workspaceCluster };
 }
 
 function phase20AdvSplitToggleNavGroup_(nextCollapsed){
@@ -166,6 +176,7 @@ function phase20AdvSplitToggleNavGroup_(nextCollapsed){
 function phase20AdvSplitSyncNavGroupState_(){
   const group = document.querySelector('#phase20AdvSplitNavGroup');
   const sub = document.querySelector('#phase20AdvSplitNavSub');
+  const workspaceCluster = document.querySelector('#navClusterWorkspace');
   const advancedBtn = document.querySelector('.nav #phase20AdvSplitNavGroup > .nav__item[data-tab="advanced-panels"]');
   if(!group) return;
   const active = document.querySelector('.nav .nav__item.is-active')?.dataset?.tab || '';
@@ -182,6 +193,7 @@ function phase20AdvSplitSyncNavGroupState_(){
   if(advancedBtn){
     advancedBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
   }
+  if(workspaceCluster && workspaceCluster.dataset) workspaceCluster.dataset.populated = 'true';
 }
 
 function phase20AdvSplitEnsureTabs_(){
@@ -229,12 +241,27 @@ function phase20AdvSplitEnsureTabs_(){
           <div class="tab__subtitle">${def.subtitle}</div>
         </div>
         <div class="phase20advsplit-wrap">
-          <div class="card">
-            <div class="card__top">
+          <div class="card phase20advsplit-shell">
+            <div class="card__top phase20advsplit-head">
               <div>
-                <div class="card__label">Advanced Panel Category</div>
-                <div class="card__title">${def.title}</div>
+                <div class="card__label">Advanced Workspace</div>
+                <div class="card__title phase20advsplit-heading">${def.title}</div>
                 <div class="card__meta" id="phase20AdvSplitMeta-${def.key}">Panels grouped under ${def.navText}.</div>
+              </div>
+              <div class="phase20advsplit-chip">${def.navText}</div>
+            </div>
+            <div class="phase20advsplit-summary">
+              <div class="phase20advsplit-summaryItem">
+                <span>Panels</span>
+                <b id="phase20AdvSplitCount-${def.key}">0</b>
+              </div>
+              <div class="phase20advsplit-summaryItem">
+                <span>Use</span>
+                <b>Command Workspace</b>
+              </div>
+              <div class="phase20advsplit-summaryItem">
+                <span>Flow</span>
+                <b>Review + Action</b>
               </div>
             </div>
             <div class="phase20advsplit-host" id="${def.hostId}">
@@ -294,8 +321,10 @@ function phase20AdvSplitApply_(){
     if(host && group && group.parentElement !== host) host.appendChild(group);
     if(group) group.open = true;
     const meta = document.getElementById(`phase20AdvSplitMeta-${def.key}`);
+    const countEl = document.getElementById(`phase20AdvSplitCount-${def.key}`);
     const count = group ? (group.querySelector('.phase16polish-body')?.children.length || 0) : 0;
     if(meta) meta.textContent = `${count} panel${count===1?'':'s'} in ${def.navText}.`;
+    if(countEl) countEl.textContent = String(count);
   });
 
   try{ phase20AdvSplitRefreshDashboardFocusCard_(); }catch{}
@@ -426,7 +455,7 @@ function phase20AdvSplitPatchPhase16Cleanup_(){
 
     try{ phase16PolishEnsureDashboardFocusCard_(dashboardTab, root); }catch(err){ console.warn('Phase16 dashboard focus card failed', err); }
     try{ phase16PolishRenderCatalog_(root); }catch{}
-    try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+    try{ phase16PolishRemoveSidebarNavDropdown_(); }catch{}
     try{ phase20AdvSplitApply_(); }catch{}
   };
   phase20AdvSplitState_.wrappedPhase16Apply = true;

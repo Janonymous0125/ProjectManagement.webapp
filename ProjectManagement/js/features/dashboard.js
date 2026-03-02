@@ -20,15 +20,25 @@ function renderDashboard(){
   const m = p ? getActiveMilestone(p) : null;
 
   ui.dashProjectTitle.textContent = p ? p.name : "—";
+  ui.dashProjectTitle.title = p ? p.name : "";
+  const dashProjectCard = document.getElementById("dashboardProjectCard");
+  if(dashProjectCard) dashProjectCard.classList.toggle("is-empty", !p);
   if(p){
     const pc = computeProjectCounts(p);
     const ppct = pc.tasks ? (pc.done / pc.tasks) * 100 : 0;
     ui.dashProjectBar.style.width = `${ppct}%`;
-    ui.dashProjectMeta.textContent = `${pc.milestones} milestone(s) • ${pc.done}/${pc.tasks} tasks done`;
+    ui.dashProjectMeta.innerHTML = `
+      <span class="dashboard-project__metaLead">${escapeHtml(`${pc.milestones} milestone(s) • ${pc.done}/${pc.tasks} tasks done`)}</span>
+      <span class="dashboard-project__metaSub">${escapeHtml(ppct >= 100 ? "Execution complete across the active project." : `${fmtPct(ppct)} completion across the active project.`)}</span>
+    `;
   } else {
     ui.dashProjectBar.style.width = "0%";
-    ui.dashProjectMeta.textContent = "Select or import a project.";
+    ui.dashProjectMeta.innerHTML = `
+      <span class="dashboard-project__metaLead">Select or import a project.</span>
+      <span class="dashboard-project__metaSub">Your active project summary, progress rail, and quick actions appear here.</span>
+    `;
   }
+  ui.dashProjectMeta.title = (ui.dashProjectMeta.textContent || "").replace(/\s+/g, ' ').trim();
 
   // Milestone list (top 6)
   ui.dashMilestoneList.innerHTML = "";
@@ -44,15 +54,21 @@ function renderDashboard(){
     if(flat.length){
       flat.slice(0, 6).forEach(({ mod, ms }) => {
         const c = computeMilestoneCounts(ms);
+        const progressPct = c.tasks ? (c.done / c.tasks) * 100 : 0;
+        const priorityClass = `badge badge--priority-${String(ms.priority || "medium").toLowerCase()}`;
+        const stateClass = `badge badge--state-${String(ms.state || "planned").toLowerCase()}`;
         const el = document.createElement("div");
-        el.className = "item " + (m && ms.id === m.id ? "is-active" : "");
+        el.className = "item dashboard-list__item dashboard-list__item--milestone " + (m && ms.id === m.id ? "is-active" : "");
         el.innerHTML = `
-          <div class="item__title">${escapeHtml(ms.title)}</div>
+          <div class="item__topline">
+            <div class="item__title">${escapeHtml(ms.title)}</div>
+            <span class="badge badge--progress">${fmtPct(progressPct)}</span>
+          </div>
           <div class="item__sub">
-            <span class="badge">${escapeHtml(mod?.name || "MODULE")}</span>
-            <span class="badge">${ms.priority.toUpperCase()}</span>
-            <span class="badge">${ms.state.toUpperCase()}</span>
-            <span class="badge">${c.done}/${c.tasks}</span>
+            <span class="badge badge--module">${escapeHtml(mod?.name || "MODULE")}</span>
+            <span class="${priorityClass}">${String(ms.priority || "medium").toUpperCase()}</span>
+            <span class="${stateClass}">${String(ms.state || "planned").toUpperCase()}</span>
+            <span class="badge badge--count">${c.done}/${c.tasks} done</span>
           </div>
         `;
         el.addEventListener("click", () => {
@@ -73,11 +89,11 @@ function renderDashboard(){
   if(state.activity.length){
     for(const a of state.activity.slice(0, 10)){
       const el = document.createElement("div");
-      el.className = "item";
+      el.className = "item dashboard-list__item dashboard-list__item--activity";
       el.innerHTML = `
         <div class="item__title">${escapeHtml(a.msg)}</div>
-        <div class="item__sub">
-          <span class="badge">${new Date(a.ts).toLocaleString()}</span>
+        <div class="item__sub item__sub--activity">
+          <span class="badge badge--time">${new Date(a.ts).toLocaleString()}</span>
         </div>
       `;
       ui.dashActivityList.appendChild(el);
@@ -91,12 +107,17 @@ function renderDashboard(){
   const hot = collectHotTasks(6);
   if(hot.length){
     for(const h of hot){
+      const severity = String(h.task.severity || "high").toLowerCase();
       const el = document.createElement("div");
-      el.className = "hot";
+      el.className = `hot hot--${severity}`;
       el.innerHTML = `
-        <div class="hot__t">${escapeHtml(h.task.title)}</div>
+        <div class="hot__topline">
+          <div class="hot__t">${escapeHtml(h.task.title)}</div>
+          <span class="badge ${severity === "blocker" ? "badge--severity-blocker" : "badge--severity-high"}">${severity.toUpperCase()}</span>
+        </div>
         <div class="hot__m">
-          <b>${escapeHtml(h.project.name)}</b> • ${escapeHtml(h.milestone.title)} • ${h.task.severity.toUpperCase()}
+          <span class="hot__project">${escapeHtml(h.project.name)}</span>
+          <span>${escapeHtml(h.milestone.title)}</span>
         </div>
       `;
       el.addEventListener("click", () => {

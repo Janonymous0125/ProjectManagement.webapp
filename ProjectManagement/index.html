@@ -43,7 +43,7 @@
                 </div>
             </div>
 
-            <div class="topbar__right">
+            <div class="topbar__right" id="topbarRight" aria-label="Topbar actions">
                 <div class="chip" id="chipNow" title="Local time">
                     <span class="chip__label">LOCAL</span>
                     <span class="chip__value" id="nowText">--:--:--</span>
@@ -61,47 +61,62 @@
             </div>
         </header>
 
-        <aside class="sidebar">
+        <aside class="sidebar" aria-label="Primary navigation">
             <div class="panel panel--tight">
                 <div class="panel__title">NAV</div>
 
-                <nav class="nav">
-                    <button class="nav__item is-active" data-tab="dashboard">
-                        <span class="nav__icon">⌁</span><span class="nav__text">Dashboard</span>
-                    </button>
-                    <button class="nav__item" data-tab="projects">
-                        <span class="nav__icon">◼</span><span class="nav__text">Project</span>
-                    </button>
-                    <button class="nav__item" data-tab="milestones">
-                        <span class="nav__icon">⟡</span><span class="nav__text">Milestone</span>
-                    </button>
-                    <button class="nav__item" data-tab="checklist">
-                        <span class="nav__icon">☑</span><span class="nav__text">Checklist</span>
-                    </button>
-                    <button class="nav__item" data-tab="import">
-                        <span class="nav__icon">⇣</span><span class="nav__text">Import</span>
-                    </button>
-                </nav>
+                <div class="sidebar__section sidebar__section--nav">
+                    <div class="sidebar__eyebrow">Core Views</div>
+                    <nav class="nav">
+                        <div class="nav__cluster nav__cluster--core" id="navClusterCore">
+                            <button class="nav__item is-active" data-tab="dashboard">
+                                <span class="nav__icon">⌁</span><span class="nav__text">Dashboard</span>
+                            </button>
+                            <button class="nav__item" data-tab="projects">
+                                <span class="nav__icon">◼</span><span class="nav__text">Project</span>
+                            </button>
+                            <button class="nav__item" data-tab="milestones">
+                                <span class="nav__icon">⟡</span><span class="nav__text">Milestone</span>
+                            </button>
+                            <button class="nav__item" data-tab="checklist">
+                                <span class="nav__icon">☑</span><span class="nav__text">Checklist</span>
+                            </button>
+                            <button class="nav__item" data-tab="import">
+                                <span class="nav__icon">⇣</span><span class="nav__text">Import</span>
+                            </button>
+                        </div>
 
-                <div class="divider"></div>
-
-                <div class="kv">
-                    <div class="kv__k">Active Project</div>
-                    <div class="kv__v" id="activeProjectName">—</div>
-                </div>
-                <div class="kv">
-                    <div class="kv__k">Active Module</div>
-                    <div class="kv__v" id="activeModuleName">—</div>
-                </div>
-                <div class="kv">
-                    <div class="kv__k">Active Milestone</div>
-                    <div class="kv__v" id="activeMilestoneName">—</div>
+                        <div class="nav__cluster nav__cluster--workspace" id="navClusterWorkspace" aria-live="polite" data-populated="false">
+                            <div class="nav__clusterLabel">Workspaces</div>
+                            <div class="nav__clusterHint" id="navClusterWorkspaceHint">Advanced tools load here as dedicated workspaces.</div>
+                        </div>
+                    </nav>
                 </div>
 
-                <div class="divider"></div>
+                <div class="divider divider--strong"></div>
 
-                <div class="hint">
-                    Tip: Import your plan from <code>.md</code> / <code>.txt</code> to auto-build milestones + tasks. Undo/Redo: <code>Ctrl/Cmd+Z</code> / <code>Shift+Ctrl/Cmd+Z</code>.
+                <div class="sidebar__section sidebar__section--context">
+                    <div class="sidebar__eyebrow">Live Context</div>
+                    <div class="sidebar__contextStack">
+                        <div class="kv">
+                            <div class="kv__k">Active Project</div>
+                            <div class="kv__v" id="activeProjectName">—</div>
+                        </div>
+                        <div class="kv">
+                            <div class="kv__k">Active Module</div>
+                            <div class="kv__v" id="activeModuleName">—</div>
+                        </div>
+                        <div class="kv">
+                            <div class="kv__k">Active Milestone</div>
+                            <div class="kv__v" id="activeMilestoneName">—</div>
+                        </div>
+                    </div>
+
+                    <div class="divider divider--soft"></div>
+
+                    <div class="hint sidebar__hint">
+                        Tip: Import your plan from <code>.md</code> / <code>.txt</code> to auto-build milestones + tasks. Undo/Redo: <code>Ctrl/Cmd+Z</code> / <code>Shift+Ctrl/Cmd+Z</code>.
+                    </div>
                 </div>
             </div>
 
@@ -116,8 +131,8 @@
                     <div class="tab__subtitle">High-signal overview: progress, bottlenecks, next actions.</div>
                 </div>
 
-                <div class="grid grid--3">
-                    <div class="card">
+                <div class="grid grid--3 dashboard-grid dashboard-grid--primary">
+                    <div class="card dashboard-card dashboard-card--completion" id="dashboardCompletionCard">
                         <div class="card__label">Completion</div>
                         <div class="meter meter--with-status">
                             <div class="meter__ring" aria-hidden="true">
@@ -148,7 +163,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card dashboard-card dashboard-card--project" id="dashboardProjectCard">
                         <div class="card__label">Active Project</div>
                         <div class="card__title" id="dashProjectTitle">—</div>
                         <div class="bar">
@@ -161,7 +176,7 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card dashboard-card dashboard-card--hotlist" id="dashboardHotlistCard">
                         <div class="card__label">Hotlist</div>
                         <div class="hotlist" id="hotlist">
                             <div class="hotlist__empty">No tasks yet. Import or add tasks in Checklist.</div>
@@ -169,13 +184,13 @@
                     </div>
                 </div>
 
-                <div class="grid grid--2">
-                    <div class="card">
+                <div class="grid grid--2 dashboard-grid dashboard-grid--secondary">
+                    <div class="card dashboard-card dashboard-card--milestones" id="dashboardMilestonesCard">
                         <div class="card__label">Milestones</div>
                         <div class="list" id="dashMilestoneList"></div>
                     </div>
 
-                    <div class="card">
+                    <div class="card dashboard-card dashboard-card--activity" id="dashboardActivityCard">
                         <div class="card__label">Recent Activity</div>
                         <div class="list" id="dashActivityList"></div>
                     </div>
@@ -202,16 +217,17 @@
                         <div class="list" id="projectList"></div>
                     </div>
 
-        <div class="card" id="projectDetailsLauncherCard">
+        <div class="card pm-launcher-card" id="projectDetailsLauncherCard">
             <div class="card__top">
                 <div>
                     <div class="card__label">Project Details</div>
                     <div class="card__hint">Open the popup to edit the active project.</div>
                 </div>
-                <button class="btn" id="btnOpenProjectDetails" type="button">Open Details</button>
+                <button class="btn btn--ghost btn--compact" id="btnOpenProjectDetails" type="button">Open Details</button>
             </div>
 
             <div class="pm-project-launcher">
+                <div class="pm-project-launcher__eyebrow">Active Project</div>
                 <div class="pm-project-launcher__name" id="projectDetailsActiveName">Select a project…</div>
                 <div class="pm-project-launcher__meta" id="projectDetailsActiveMeta">Pick a project from the list to manage its details.</div>
             </div>
@@ -227,7 +243,7 @@
                 </div>
 
                 <div class="grid grid--2">
-                    <div class="card" id="moduleDetailsLauncherCard">
+                    <div class="card pm-launcher-card" id="moduleDetailsLauncherCard">
                         <div class="card__top">
                             <div>
                                 <div class="card__label">Modules</div>
@@ -235,7 +251,7 @@
                             </div>
                             <div class="row row--actions">
                                 <button class="btn" id="btnNewModule">New Module</button>
-                                <button class="btn" id="btnOpenModuleDetails" type="button">Open Details</button>
+                                <button class="btn btn--ghost btn--compact" id="btnOpenModuleDetails" type="button">Open Details</button>
                             </div>
                         </div>
 
@@ -244,12 +260,13 @@
                         <div class="divider"></div>
 
                         <div class="pm-project-launcher">
+                            <div class="pm-project-launcher__eyebrow">Active Module</div>
                             <div class="pm-project-launcher__name" id="moduleDetailsActiveName">Select a module…</div>
                             <div class="pm-project-launcher__meta" id="moduleDetailsActiveMeta">Pick a module to manage details in the popup.</div>
                         </div>
                     </div>
 
-                    <div class="card" id="milestoneDetailsLauncherCard">
+                    <div class="card pm-launcher-card" id="milestoneDetailsLauncherCard">
                         <div class="card__top">
                             <div>
                                 <div class="card__label">Milestones</div>
@@ -257,7 +274,7 @@
                             </div>
                             <div class="row row--actions">
                                 <button class="btn" id="btnNewMilestone">New Milestone</button>
-                                <button class="btn" id="btnOpenMilestoneDetails" type="button">Open Details</button>
+                                <button class="btn btn--ghost btn--compact" id="btnOpenMilestoneDetails" type="button">Open Details</button>
                             </div>
                         </div>
 
@@ -266,6 +283,7 @@
                         <div class="divider"></div>
 
                         <div class="pm-project-launcher">
+                            <div class="pm-project-launcher__eyebrow">Active Milestone</div>
                             <div class="pm-project-launcher__name" id="milestoneDetailsActiveName">Select a milestone…</div>
                             <div class="pm-project-launcher__meta" id="milestoneDetailsActiveMeta">Pick a module and milestone to manage details in the popup.</div>
                         </div>
@@ -288,8 +306,8 @@
                         </div>
                         <div class="row row--inline">
                             <button class="btn" id="btnOpenTaskAdd" type="button">Add Task</button>
-                            <button class="btn btn--ghost" id="btnSortTasks">Sort</button>
-                            <button class="btn btn--ghost" id="btnClearDone">Clear Done</button>
+                            <button class="btn btn--ghost btn--compact" id="btnSortTasks">Sort</button>
+                            <button class="btn btn--ghost btn--compact" id="btnClearDone">Clear Done</button>
                         </div>
                     </div>
 
@@ -305,14 +323,28 @@
                     <div class="tab__subtitle">Import from <code>.md</code> / <code>.txt</code> (project parser) or <code>.json</code> (full state restore preview).</div>
                 </div>
 
-                <div class="grid grid--2">
-                    <div class="card">
+                <div class="grid grid--2 import-layout">
+                    <div class="card import-card import-card--source">
                         <div class="card__label">Import Source</div>
+                        <div class="import-card__intro">
+                            <div class="import-card__title">Bring in project text or restore a saved JSON state</div>
+                            <div class="import-card__meta">Stage the source, run a parser preview, then review the incoming structure before applying anything to your workspace.</div>
+                            <div class="import-format-row" aria-label="Supported import formats">
+                                <span class="import-format-chip">.md</span>
+                                <span class="import-format-chip">.txt</span>
+                                <span class="import-format-chip">.json</span>
+                            </div>
+                        </div>
 
                         <div class="dropzone" id="dropzone">
                             <div class="dropzone__title">Drop your <b>.md</b>, <b>.txt</b>, or <b>.json</b> file here</div>
-                            <div class="dropzone__sub">…or select one below.</div>
+                            <div class="dropzone__sub">…or select one below to stage a parser preview.</div>
                             <input type="file" id="fileInput" accept=".md,.txt,.json,text/markdown,text/plain,application/json" />
+                        </div>
+
+                        <div class="import-source-meta" id="importSourceMeta">
+                            <div class="import-source-meta__item" id="importSourceFile">No file selected. You can also paste text below.</div>
+                            <div class="import-source-meta__item" id="importSourceType">Parser mode: Awaiting source</div>
                         </div>
 
                         <div class="divider"></div>
@@ -327,7 +359,7 @@
 
                         <div class="divider"></div>
 
-                        <div class="hint">
+                        <div class="hint import-rules">
                             Import rules (best effort):
                             <ul>
                                 <li>Milestones: lines like <code>M0 —</code>, <code>Milestone</code>, <code>## Heading</code></li>
@@ -338,23 +370,31 @@
                         </div>
                     </div>
 
-                    <div class="card">
+                    <div class="card import-card import-card--preview">
                         <div class="card__label">Preview</div>
 
-                        <div class="kv">
-                            <div class="kv__k">Project Name</div>
-                            <div class="kv__v" id="previewProjectName">—</div>
-                        </div>
-                        <div class="kv">
-                            <div class="kv__k">Milestones</div>
-                            <div class="kv__v" id="previewMilestones">0</div>
-                        </div>
-                        <div class="kv">
-                            <div class="kv__k">Tasks</div>
-                            <div class="kv__v" id="previewTasks">0</div>
+                        <div class="import-preview-head">
+                            <div class="import-preview-head__copy">
+                                <div class="import-preview-head__eyebrow">Incoming Structure</div>
+                                <div class="import-preview-head__name" id="previewProjectName">—</div>
+                            </div>
+                            <div class="import-preview-head__mode is-neutral" id="importPreviewMode">Awaiting Parse</div>
                         </div>
 
-                        <div class="divider"></div>
+                        <div class="import-summary-grid">
+                            <div class="import-summary-tile">
+                                <span class="import-summary-tile__label">Milestones</span>
+                                <b class="import-summary-tile__value" id="previewMilestones">0</b>
+                            </div>
+                            <div class="import-summary-tile">
+                                <span class="import-summary-tile__label">Tasks</span>
+                                <b class="import-summary-tile__value" id="previewTasks">0</b>
+                            </div>
+                            <div class="import-summary-tile">
+                                <span class="import-summary-tile__label">Warnings</span>
+                                <b class="import-summary-tile__value" id="previewWarnings">0</b>
+                            </div>
+                        </div>
 
                         <div class="preview" id="previewTree">
                             <div class="preview__empty">Parse a file to see a preview.</div>
@@ -365,9 +405,7 @@
                             <button class="btn btn--ghost" id="btnImportAsNew" disabled>Import as New</button>
                         </div>
 
-                        <div class="divider"></div>
-
-                        <div class="hint" id="importMsg">—</div>
+                        <div class="hint import-msg is-neutral" id="importMsg">—</div>
                     </div>
                 </div>
             </section>
@@ -377,225 +415,429 @@
 
 <div class="pm-task-modal" id="taskAddModal" aria-hidden="true">
     <div class="pm-task-modal__backdrop" data-close-task-add="1"></div>
-    <div class="pm-task-modal__panel card" role="dialog" aria-modal="true" aria-labelledby="taskAddModalTitle">
-        <div class="card__top">
+    <div class="pm-task-modal__panel card pm-modal-card pm-modal-card--task" role="dialog" aria-modal="true" aria-labelledby="taskAddModalTitle">
+        <div class="card__top pm-modal-card__top">
             <div>
                 <div class="card__label">Add Task</div>
                 <div class="card__hint" id="taskAddModalTitle">Create a task for the active milestone.</div>
             </div>
-            <button class="btn btn--ghost" id="btnCloseTaskAdd" type="button" aria-label="Close Add Task">Close</button>
+            <button class="btn btn--ghost btn--compact" id="btnCloseTaskAdd" type="button" aria-label="Close Add Task">Close</button>
         </div>
 
-        <div class="form">
-            <label class="field">
-                <span class="field__label">Task</span>
-                <input class="input" id="taskText" placeholder="e.g., Implement MemoryStore migrations" />
-            </label>
+        <div class="pm-task-briefing" id="taskAddBriefing">
+            <div class="pm-task-briefing__scope">
+                <div class="pm-task-briefing__eyebrow">Execution Target</div>
+                <div class="pm-task-briefing__title" id="taskAddScopeProject">No active project</div>
+                <div class="pm-task-briefing__meta" id="taskAddScopeMilestone">Pick an active milestone from the Checklist lane to stage a new task.</div>
+            </div>
+            <div class="pm-task-briefing__stats">
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Open Queue</span>
+                    <b class="pm-task-briefingStat__v" id="taskAddScopeOpen">0</b>
+                </div>
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Blocked</span>
+                    <b class="pm-task-briefingStat__v" id="taskAddScopeBlocked">0</b>
+                </div>
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Overdue</span>
+                    <b class="pm-task-briefingStat__v" id="taskAddScopeOverdue">0</b>
+                </div>
+            </div>
+        </div>
 
-            <div class="row row--2">
+        <div class="form pm-form">
+            <div class="pm-modal-formGroup">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Task Brief</div>
+                    <div class="pm-modal-formGroup__meta">Keep the task title in its own primary block so the add flow starts with the outcome the checklist should communicate.</div>
+                </div>
                 <label class="field">
-                    <span class="field__label">Severity</span>
-                    <select class="select" id="taskSeverity">
-                        <option value="normal" selected>Normal</option>
-                        <option value="high">High</option>
-                        <option value="blocker">Blocker</option>
-                    </select>
-                </label>
-
-                <label class="field">
-                    <span class="field__label">Assign (optional)</span>
-                    <input class="input" id="taskAssignee" placeholder="e.g., You / Stark / Team" />
+                    <span class="field__label">Task</span>
+                    <input class="input" id="taskText" placeholder="e.g., Implement MemoryStore migrations" />
                 </label>
             </div>
 
-            <div class="row row--actions">
+            <div class="pm-modal-formGroup pm-modal-formGroup--split">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Routing & Severity</div>
+                    <div class="pm-modal-formGroup__meta">Owner and urgency stay in a lighter settings group so quick staging decisions feel less crowded before you add the task.</div>
+                </div>
+                <div class="row row--2">
+                    <label class="field">
+                        <span class="field__label">Severity</span>
+                        <select class="select" id="taskSeverity">
+                            <option value="normal" selected>Normal</option>
+                            <option value="high">High</option>
+                            <option value="blocker">Blocker</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span class="field__label">Assign (optional)</span>
+                        <input class="input" id="taskAssignee" placeholder="e.g., You / Stark / Team" />
+                    </label>
+                </div>
+            </div>
+
+            <div class="pm-task-draft" id="taskAddDraft">
+                <div class="pm-task-draft__eyebrow">Draft Readout</div>
+                <div class="pm-task-draft__title" id="taskAddDraftTitle">Awaiting task title</div>
+                <div class="pm-task-draft__meta" id="taskAddDraftMeta">Set severity, owner, and due date to shape the next checklist push.</div>
+                <div class="pm-task-draft__chips" id="taskAddDraftChips">
+                    <span class="badge">SEVERITY NORMAL</span>
+                    <span class="badge">OWNER OPEN</span>
+                    <span class="badge">DUE OPEN</span>
+                </div>
+            </div>
+
+            <div class="row row--actions pm-modal-actions">
                 <button class="btn" id="btnAddTask" type="button">Add</button>
-                <button class="btn btn--ghost" id="btnJumpMilestones" type="button">Pick Milestone</button>
+                <button class="btn btn--ghost btn--compact" id="btnJumpMilestones" type="button">Pick Milestone</button>
             </div>
         </div>
 
-        <div class="divider"></div>
+        <div class="pm-modal-section">
+            <div class="hint pm-modal-note">
+                <div class="pm-task-modal__noteTitle">Checklist Routing</div>
+                <div id="taskAddModalNote">Checklist is tied to your <b>Active Project</b> + <b>Active Milestone</b>.</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <div class="hint">
-            Checklist is tied to your <b>Active Project</b> + <b>Active Milestone</b>.
+<div class="pm-task-modal" id="taskEditModal" aria-hidden="true">
+    <div class="pm-task-modal__backdrop" data-close-task-edit="1"></div>
+    <div class="pm-task-modal__panel pm-task-modal__panel--edit card pm-modal-card" role="dialog" aria-modal="true" aria-labelledby="taskEditModalTitle">
+        <div class="card__top pm-modal-card__top">
+            <div>
+                <div class="card__label">Task Details</div>
+                <div class="card__hint" id="taskEditModalTitle">Refine the active task without losing checklist context.</div>
+            </div>
+            <button class="btn btn--ghost btn--compact" id="btnCloseTaskEdit" type="button" aria-label="Close Task Details">Close</button>
+        </div>
+
+        <div class="pm-task-briefing pm-task-briefing--edit" id="taskEditBriefing">
+            <div class="pm-task-briefing__scope">
+                <div class="pm-task-briefing__eyebrow">Active Task Scope</div>
+                <div class="pm-task-briefing__title" id="taskEditScopeProject">No task selected</div>
+                <div class="pm-task-briefing__meta" id="taskEditScopeMilestone">Choose a task from the Checklist lane to open its details panel.</div>
+            </div>
+            <div class="pm-task-briefing__stats pm-task-briefing__stats--edit">
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Steps</span>
+                    <b class="pm-task-briefingStat__v pm-task-briefingStat__v--compact" id="taskEditScopeSteps">0 / 0</b>
+                </div>
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Risk State</span>
+                    <b class="pm-task-briefingStat__v pm-task-briefingStat__v--compact" id="taskEditScopeRisk">CLEAR</b>
+                </div>
+                <div class="pm-task-briefingStat">
+                    <span class="pm-task-briefingStat__k">Created</span>
+                    <b class="pm-task-briefingStat__v pm-task-briefingStat__v--compact" id="taskEditScopeCreated">—</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="form pm-form">
+            <div class="pm-modal-formGroup">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Task Brief</div>
+                    <div class="pm-modal-formGroup__meta">Keep the task title isolated in the first edit block so the execution outcome stays easy to scan before you adjust supporting fields.</div>
+                </div>
+                <label class="field">
+                    <span class="field__label">Task Title</span>
+                    <input class="input" id="taskEditTitle" placeholder="Refine the task title" />
+                </label>
+            </div>
+
+            <div class="pm-modal-formGroup pm-modal-formGroup--split">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Execution Settings</div>
+                    <div class="pm-modal-formGroup__meta">Severity, ownership, and due date stay together in one settings block so scheduling adjustments read as one lightweight update pass.</div>
+                </div>
+                <div class="row row--2">
+                    <label class="field">
+                        <span class="field__label">Severity</span>
+                        <select class="select" id="taskEditSeverity">
+                            <option value="normal" selected>Normal</option>
+                            <option value="high">High</option>
+                            <option value="blocker">Blocker</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span class="field__label">Assign (optional)</span>
+                        <input class="input" id="taskEditAssignee" placeholder="e.g., You / Stark / Team" />
+                    </label>
+                </div>
+
+                <label class="field">
+                    <span class="field__label">Due Date (optional)</span>
+                    <input class="input" id="taskEditDue" type="date" />
+                </label>
+            </div>
+
+            <div class="pm-task-draft pm-task-draft--edit" id="taskEditDraft">
+                <div class="pm-task-draft__eyebrow">Live Task Readout</div>
+                <div class="pm-task-draft__title" id="taskEditDraftTitle">Awaiting task title</div>
+                <div class="pm-task-draft__meta" id="taskEditDraftMeta">Adjust title, severity, owner, or due date to sharpen the execution brief.</div>
+                <div class="pm-task-draft__chips" id="taskEditDraftChips">
+                    <span class="badge">SEVERITY NORMAL</span>
+                    <span class="badge">OWNER OPEN</span>
+                    <span class="badge">DUE OPEN</span>
+                </div>
+            </div>
+
+            <div class="row row--actions pm-modal-actions">
+                <button class="btn" id="btnSaveTaskEdit" type="button">Save</button>
+                <button class="btn btn--ghost btn--compact" id="btnCancelTaskEdit" type="button">Cancel</button>
+            </div>
+        </div>
+
+        <div class="pm-modal-section">
+            <div class="hint pm-modal-note">
+                <div class="pm-task-modal__noteTitle">Edit Guidance</div>
+                <div id="taskEditModalNote">Task details stay anchored to the same checklist item. Save when the execution brief feels clear.</div>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="pm-module-modal" id="moduleDetailsModal" aria-hidden="true">
     <div class="pm-module-modal__backdrop" data-close-module-details="1"></div>
-    <div class="pm-module-modal__panel card" role="dialog" aria-modal="true" aria-labelledby="moduleDetailsModalTitle">
-        <div class="card__top">
+    <div class="pm-module-modal__panel card pm-modal-card" role="dialog" aria-modal="true" aria-labelledby="moduleDetailsModalTitle">
+        <div class="card__top pm-modal-card__top">
             <div>
                 <div class="card__label">Module Details</div>
                 <div class="card__hint" id="moduleDetailsModalTitle">Edit the active module in this popup.</div>
             </div>
-            <button class="btn btn--ghost" id="btnCloseModuleDetails" type="button" aria-label="Close Module Details">Close</button>
+            <div class="pm-modal-card__topActions">
+                <div id="moduleDetailsHeaderMenuMount"></div>
+                <button class="btn btn--ghost btn--compact" id="btnCloseModuleDetails" type="button" aria-label="Close Module Details">Close</button>
+            </div>
         </div>
 
-        <div class="form">
-            <label class="field">
-                <span class="field__label">Name</span>
-                <input class="input" id="moduleName" placeholder="Select a module…" />
-            </label>
-
-            <label class="field">
-                <span class="field__label">Description</span>
-                <textarea class="textarea" id="moduleDesc" placeholder="Notes / scope / constraints for this module"></textarea>
-            </label>
-
-            <div class="row row--2">
+        <div class="form pm-form">
+            <div class="pm-modal-formGroup">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Core Brief</div>
+                    <div class="pm-modal-formGroup__meta">Keep the module name and working notes together so the popup reads like one focused edit surface.</div>
+                </div>
                 <label class="field">
-                    <span class="field__label">Status</span>
-                    <select class="select" id="moduleStatus">
-                        <option value="todo">To do</option>
-                        <option value="doing">Doing</option>
-                        <option value="done">Done</option>
-                    </select>
+                    <span class="field__label">Name</span>
+                    <input class="input" id="moduleName" placeholder="Select a module…" />
                 </label>
+
                 <label class="field">
-                    <span class="field__label">Tag</span>
-                    <input class="input" id="moduleTag" placeholder="e.g., Backend / UI / Ops" />
+                    <span class="field__label">Description</span>
+                    <textarea class="textarea" id="moduleDesc" placeholder="Notes / scope / constraints for this module"></textarea>
                 </label>
             </div>
 
-            <div class="row row--actions">
+            <div class="pm-modal-formGroup pm-modal-formGroup--split">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Execution Settings</div>
+                    <div class="pm-modal-formGroup__meta">Status and tagging stay in a lighter control block so quick adjustments feel less crowded.</div>
+                </div>
+                <div class="row row--2">
+                    <label class="field">
+                        <span class="field__label">Status</span>
+                        <select class="select" id="moduleStatus">
+                            <option value="todo">To do</option>
+                            <option value="doing">Doing</option>
+                            <option value="done">Done</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">Tag</span>
+                        <input class="input" id="moduleTag" placeholder="e.g., Backend / UI / Ops" />
+                    </label>
+                </div>
+            </div>
+
+            <div class="row row--actions pm-modal-actions">
                 <button class="btn" id="btnSaveModule" type="button">Save</button>
                 <button class="btn btn--danger" id="btnDeleteModule" type="button">Delete</button>
             </div>
         </div>
 
-        <div class="divider"></div>
-
-        <div class="kv">
-            <div class="kv__k">Milestones in module</div>
-            <div class="kv__v" id="moduleMilestoneCount">0</div>
-        </div>
-        <div class="kv">
-            <div class="kv__k">Tasks in module</div>
-            <div class="kv__v" id="moduleTaskCount">0</div>
-        </div>
-        <div class="kv">
-            <div class="kv__k">Completion</div>
-            <div class="kv__v" id="moduleCompletion">0%</div>
+        <div class="pm-modal-section">
+            <div class="pm-modal-section__head">
+                <div class="pm-modal-section__eyebrow">Module Snapshot</div>
+                <div class="pm-modal-section__meta">Read-only counts sit below the editable fields so the modal separates decision inputs from project health.</div>
+            </div>
+            <div class="pm-modal-metrics">
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Milestones in module</div>
+                    <div class="kv__v" id="moduleMilestoneCount">0</div>
+                </div>
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Tasks in module</div>
+                    <div class="kv__v" id="moduleTaskCount">0</div>
+                </div>
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Completion</div>
+                    <div class="kv__v" id="moduleCompletion">0%</div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="pm-milestone-modal" id="milestoneDetailsModal" aria-hidden="true">
     <div class="pm-milestone-modal__backdrop" data-close-milestone-details="1"></div>
-    <div class="pm-milestone-modal__panel card" role="dialog" aria-modal="true" aria-labelledby="milestoneDetailsModalTitle">
-        <div class="card__top">
+    <div class="pm-milestone-modal__panel card pm-modal-card" role="dialog" aria-modal="true" aria-labelledby="milestoneDetailsModalTitle">
+        <div class="card__top pm-modal-card__top">
             <div>
                 <div class="card__label">Milestone Details</div>
                 <div class="card__hint" id="milestoneDetailsModalTitle">Edit the active milestone in this popup.</div>
             </div>
-            <button class="btn btn--ghost" id="btnCloseMilestoneDetails" type="button" aria-label="Close Milestone Details">Close</button>
+            <button class="btn btn--ghost btn--compact" id="btnCloseMilestoneDetails" type="button" aria-label="Close Milestone Details">Close</button>
         </div>
 
-        <div class="form">
-            <label class="field">
-                <span class="field__label">Title</span>
-                <input class="input" id="milestoneTitle" placeholder="Select a milestone…" />
-            </label>
-
-            <label class="field">
-                <span class="field__label">Notes</span>
-                <textarea class="textarea" id="milestoneNotes" placeholder="Definition of Done / constraints / links"></textarea>
-            </label>
-
-            <div class="row row--2">
+        <div class="form pm-form">
+            <div class="pm-modal-formGroup">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Milestone Brief</div>
+                    <div class="pm-modal-formGroup__meta">The milestone title and its definition of done stay together so planning details feel easier to scan in one pass.</div>
+                </div>
                 <label class="field">
-                    <span class="field__label">Priority</span>
-                    <select class="select" id="milestonePriority">
-                        <option value="p1">P1</option>
-                        <option value="p2" selected>P2</option>
-                        <option value="p3">P3</option>
-                    </select>
+                    <span class="field__label">Title</span>
+                    <input class="input" id="milestoneTitle" placeholder="Select a milestone…" />
                 </label>
+
                 <label class="field">
-                    <span class="field__label">State</span>
-                    <select class="select" id="milestoneState">
-                        <option value="todo">To do</option>
-                        <option value="doing">Doing</option>
-                        <option value="done">Done</option>
-                    </select>
+                    <span class="field__label">Notes</span>
+                    <textarea class="textarea" id="milestoneNotes" placeholder="Definition of Done / constraints / links"></textarea>
                 </label>
             </div>
 
-            <div class="row row--actions">
+            <div class="pm-modal-formGroup pm-modal-formGroup--split">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Priority & State</div>
+                    <div class="pm-modal-formGroup__meta">Quick status controls are grouped separately so the planning intent is not competing with the longer notes field.</div>
+                </div>
+                <div class="row row--2">
+                    <label class="field">
+                        <span class="field__label">Priority</span>
+                        <select class="select" id="milestonePriority">
+                            <option value="p1">P1</option>
+                            <option value="p2" selected>P2</option>
+                            <option value="p3">P3</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span class="field__label">State</span>
+                        <select class="select" id="milestoneState">
+                            <option value="todo">To do</option>
+                            <option value="doing">Doing</option>
+                            <option value="done">Done</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div class="row row--actions pm-modal-actions">
                 <button class="btn" id="btnSaveMilestone" type="button">Save</button>
                 <button class="btn btn--danger" id="btnDeleteMilestone" type="button">Delete</button>
             </div>
         </div>
 
-        <div class="divider"></div>
-
-        <div class="kv">
-            <div class="kv__k">Tasks in milestone</div>
-            <div class="kv__v" id="milestoneTaskCount">0</div>
-        </div>
-        <div class="kv">
-            <div class="kv__k">Completion</div>
-            <div class="kv__v" id="milestoneCompletion">0%</div>
+        <div class="pm-modal-section">
+            <div class="pm-modal-section__head">
+                <div class="pm-modal-section__eyebrow">Milestone Snapshot</div>
+                <div class="pm-modal-section__meta">Task counts and completion stay separated from the editable planning fields above.</div>
+            </div>
+            <div class="pm-modal-metrics">
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Tasks in milestone</div>
+                    <div class="kv__v" id="milestoneTaskCount">0</div>
+                </div>
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Completion</div>
+                    <div class="kv__v" id="milestoneCompletion">0%</div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <div class="pm-project-modal" id="projectDetailsModal" aria-hidden="true">
     <div class="pm-project-modal__backdrop" data-close-project-details="1"></div>
-    <div class="pm-project-modal__panel card" role="dialog" aria-modal="true" aria-labelledby="projectDetailsModalTitle">
-        <div class="card__top">
+    <div class="pm-project-modal__panel card pm-modal-card" role="dialog" aria-modal="true" aria-labelledby="projectDetailsModalTitle">
+        <div class="card__top pm-modal-card__top">
             <div>
                 <div class="card__label">Project Details</div>
                 <div class="card__hint" id="projectDetailsModalTitle">Edit the active project in this popup.</div>
             </div>
-            <button class="btn btn--ghost" id="btnCloseProjectDetails" type="button" aria-label="Close Project Details">Close</button>
+            <div class="pm-modal-card__topActions">
+                <div id="projectDetailsHeaderMenuMount"></div>
+                <button class="btn btn--ghost btn--compact" id="btnCloseProjectDetails" type="button" aria-label="Close Project Details">Close</button>
+            </div>
         </div>
 
-        <div class="form">
-            <label class="field">
-                <span class="field__label">Name</span>
-                <input class="input" id="projectName" placeholder="Select a project…" />
-            </label>
-
-            <label class="field">
-                <span class="field__label">Description</span>
-                <textarea class="textarea" id="projectDesc" placeholder="Optional notes / scope / constraints"></textarea>
-            </label>
-
-            <div class="row row--2">
+        <div class="form pm-form">
+            <div class="pm-modal-formGroup">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Project Brief</div>
+                    <div class="pm-modal-formGroup__meta">The project name and wider scope notes stay grouped so the modal opens with one clear planning block.</div>
+                </div>
                 <label class="field">
-                    <span class="field__label">Status</span>
-                    <select class="select" id="projectStatus">
-                        <option value="active">Active</option>
-                        <option value="paused">Paused</option>
-                        <option value="done">Done</option>
-                    </select>
+                    <span class="field__label">Name</span>
+                    <input class="input" id="projectName" placeholder="Select a project…" />
                 </label>
 
                 <label class="field">
-                    <span class="field__label">Tag</span>
-                    <input class="input" id="projectTag" placeholder="e.g., Stark Assistant" />
+                    <span class="field__label">Description</span>
+                    <textarea class="textarea" id="projectDesc" placeholder="Optional notes / scope / constraints"></textarea>
                 </label>
             </div>
 
-            <div class="row row--actions">
+            <div class="pm-modal-formGroup pm-modal-formGroup--split">
+                <div class="pm-modal-formGroup__head">
+                    <div class="pm-modal-formGroup__eyebrow">Project Settings</div>
+                    <div class="pm-modal-formGroup__meta">Status and categorization are separated into a lighter control band for faster edits.</div>
+                </div>
+                <div class="row row--2">
+                    <label class="field">
+                        <span class="field__label">Status</span>
+                        <select class="select" id="projectStatus">
+                            <option value="active">Active</option>
+                            <option value="paused">Paused</option>
+                            <option value="done">Done</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span class="field__label">Tag</span>
+                        <input class="input" id="projectTag" placeholder="e.g., Stark Assistant" />
+                    </label>
+                </div>
+            </div>
+
+            <div class="row row--actions pm-modal-actions">
                 <button class="btn" id="btnSaveProject" type="button">Save</button>
                 <button class="btn btn--ghost" id="btnDuplicateProject" type="button">Duplicate</button>
                 <button class="btn btn--danger" id="btnDeleteProject" type="button">Delete</button>
             </div>
         </div>
 
-        <div class="divider"></div>
-
-        <div class="kv">
-            <div class="kv__k">Milestones</div>
-            <div class="kv__v" id="projectMilestoneCount">0</div>
-        </div>
-        <div class="kv">
-            <div class="kv__k">Tasks</div>
-            <div class="kv__v" id="projectTaskCount">0</div>
+        <div class="pm-modal-section">
+            <div class="pm-modal-section__head">
+                <div class="pm-modal-section__eyebrow">Project Snapshot</div>
+                <div class="pm-modal-section__meta">Read-only workload counts stay below the editable project brief so the popup feels less compressed.</div>
+            </div>
+            <div class="pm-modal-metrics">
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Milestones</div>
+                    <div class="kv__v" id="projectMilestoneCount">0</div>
+                </div>
+                <div class="kv pm-modal-kv">
+                    <div class="kv__k">Tasks</div>
+                    <div class="kv__v" id="projectTaskCount">0</div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

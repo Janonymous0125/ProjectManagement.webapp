@@ -10,8 +10,11 @@ function renderAll(){
   const m = p ? getActiveMilestone(p) : null;
 
   ui.activeProjectName.textContent = p ? p.name : "—";
+  ui.activeProjectName.title = p ? p.name : "";
   ui.activeModuleName.textContent = mod ? mod.name : "—";
+  ui.activeModuleName.title = mod ? mod.name : "";
   ui.activeMilestoneName.textContent = m ? m.title : "—";
+  ui.activeMilestoneName.title = m ? m.title : "";
 
   renderDashboard();
   renderProjects();
@@ -69,6 +72,7 @@ function renderProjects(){
 
   if(ui.projectDetailsActiveName){
     ui.projectDetailsActiveName.textContent = ap ? ap.name : "Select a project…";
+    ui.projectDetailsActiveName.title = ap ? ap.name : "";
   }
 
   if(ui.projectDetailsActiveMeta){
@@ -139,7 +143,7 @@ function renderMilestones(){
       ui.btnOpenModuleDetails.disabled = true;
       ui.btnOpenModuleDetails.title = "Select a project first";
     }
-    if(ui.moduleDetailsActiveName) ui.moduleDetailsActiveName.textContent = "Select a module…";
+    if(ui.moduleDetailsActiveName){ ui.moduleDetailsActiveName.textContent = "Select a module…"; ui.moduleDetailsActiveName.title = ""; }
     if(ui.moduleDetailsActiveMeta) ui.moduleDetailsActiveMeta.textContent = "Pick a module to manage details in the popup.";
     if(ui.moduleDetailsModalTitle) ui.moduleDetailsModalTitle.textContent = "Edit the active module in this popup.";
 
@@ -147,7 +151,7 @@ function renderMilestones(){
       ui.btnOpenMilestoneDetails.disabled = true;
       ui.btnOpenMilestoneDetails.title = "Select a project first";
     }
-    if(ui.milestoneDetailsActiveName) ui.milestoneDetailsActiveName.textContent = "Select a milestone…";
+    if(ui.milestoneDetailsActiveName){ ui.milestoneDetailsActiveName.textContent = "Select a milestone…"; ui.milestoneDetailsActiveName.title = ""; }
     if(ui.milestoneDetailsActiveMeta) ui.milestoneDetailsActiveMeta.textContent = "Pick a module and milestone to manage details in the popup.";
     if(ui.milestoneDetailsModalTitle) ui.milestoneDetailsModalTitle.textContent = "Edit the active milestone in this popup.";
 
@@ -176,7 +180,7 @@ function renderMilestones(){
       ui.btnOpenModuleDetails.disabled = true;
       ui.btnOpenModuleDetails.title = "Create a module first";
     }
-    if(ui.moduleDetailsActiveName) ui.moduleDetailsActiveName.textContent = p.name;
+    if(ui.moduleDetailsActiveName){ ui.moduleDetailsActiveName.textContent = p.name; ui.moduleDetailsActiveName.title = p.name; }
     if(ui.moduleDetailsActiveMeta) ui.moduleDetailsActiveMeta.textContent = "Create a module to manage details in the popup.";
     if(ui.moduleDetailsModalTitle) ui.moduleDetailsModalTitle.textContent = `Editing ${p.name}`;
 
@@ -184,7 +188,7 @@ function renderMilestones(){
       ui.btnOpenMilestoneDetails.disabled = true;
       ui.btnOpenMilestoneDetails.title = "Create a module first";
     }
-    if(ui.milestoneDetailsActiveName) ui.milestoneDetailsActiveName.textContent = p.name;
+    if(ui.milestoneDetailsActiveName){ ui.milestoneDetailsActiveName.textContent = p.name; ui.milestoneDetailsActiveName.title = p.name; }
     if(ui.milestoneDetailsActiveMeta) ui.milestoneDetailsActiveMeta.textContent = "Create a module and milestone to manage details in the popup.";
     if(ui.milestoneDetailsModalTitle) ui.milestoneDetailsModalTitle.textContent = "Edit the active milestone in this popup.";
 
@@ -249,6 +253,7 @@ function renderMilestones(){
 
   if(ui.moduleDetailsActiveName){
     ui.moduleDetailsActiveName.textContent = activeMod ? activeMod.name : "Select a module…";
+    ui.moduleDetailsActiveName.title = activeMod ? activeMod.name : "";
   }
 
   if(ui.moduleDetailsActiveMeta){
@@ -326,6 +331,7 @@ function renderMilestones(){
 
   if(ui.milestoneDetailsActiveName){
     ui.milestoneDetailsActiveName.textContent = active ? active.title : "Select a milestone…";
+    ui.milestoneDetailsActiveName.title = active ? active.title : "";
   }
 
   if(ui.milestoneDetailsActiveMeta){
@@ -399,15 +405,32 @@ function renderChecklist(){
     if(!p || !m) ui.taskAddModalTitle.textContent = "Create a task for the active milestone.";
     else ui.taskAddModalTitle.textContent = `Add a task to ${p.name} • ${m.title}`;
   }
+  try{
+    if(typeof syncTaskAddModalUx_ === "function") syncTaskAddModalUx_();
+  }catch(err){
+    console.warn("Task add modal UX sync failed", err);
+  }
 
   if(!p){
     ui.taskScopeHint.textContent = "Select a project first.";
-    ui.taskList.innerHTML = `<div class="hint">No project selected.</div>`;
+    ui.taskList.innerHTML = `
+      <div class="phase5-checklistEmpty">
+        <div class="phase5-checklistEmpty__eyebrow">CHECKLIST STANDBY</div>
+        <div class="phase5-checklistEmpty__title">No active project selected</div>
+        <div class="phase5-checklistEmpty__meta">Choose an active project first so the execution queue can lock onto its milestone tasks.</div>
+      </div>
+    `;
     return;
   }
   if(!m){
     ui.taskScopeHint.textContent = "Select a milestone first.";
-    ui.taskList.innerHTML = `<div class="hint">No milestone selected.</div>`;
+    ui.taskList.innerHTML = `
+      <div class="phase5-checklistEmpty">
+        <div class="phase5-checklistEmpty__eyebrow">CHECKLIST STANDBY</div>
+        <div class="phase5-checklistEmpty__title">No active milestone selected</div>
+        <div class="phase5-checklistEmpty__meta">Pick the milestone you want to execute so this queue can load its tasks, steps, blockers, and due signals.</div>
+      </div>
+    `;
     return;
   }
 
@@ -426,7 +449,10 @@ function renderChecklist(){
     el.innerHTML = `
       <div class="task__check" title="Toggle done"></div>
       <div class="task__body">
-        <div class="task__title">${escapeHtml(t.title)}</div>
+        <div class="task__head">
+          <div class="task__title">${escapeHtml(t.title)}</div>
+          <div class="task__state ${t.done ? "is-done" : (t.severity === "blocker" ? "is-blocker" : (t.severity === "high" ? "is-high" : ""))}">${t.done ? "DONE" : (t.severity === "blocker" ? "HOT" : (t.severity === "high" ? "FOCUS" : "OPEN"))}</div>
+        </div>
         <div class="task__meta">
           <span class="badge ${t.severity !== "normal" ? "badge--warn" : ""}">${t.severity.toUpperCase()}</span>
           ${t.assignee ? `<span class="badge">${escapeHtml(t.assignee)}</span>` : ""}
@@ -471,100 +497,14 @@ function renderChecklist(){
     
 
     el.querySelector('[data-act="editTask"]').addEventListener("click", () => {
-      // Inline edit: title + severity + assignee
-      const titleEl = el.querySelector(".task__title");
-      const metaEl = el.querySelector(".task__meta");
-      const actionsEl = el.querySelector(".task__actions");
-      if(!titleEl || !metaEl || !actionsEl) return;
-
-      const oldTitle = t.title;
-      const oldSev = t.severity;
-      const oldAssignee = t.assignee;
-
-      // Title input
-      const titleInput = document.createElement("input");
-      titleInput.type = "text";
-      titleInput.className = "input task__edit";
-      titleInput.value = oldTitle;
-
-      // Severity select
-      const sevSelect = document.createElement("select");
-      sevSelect.className = "input task__editSelect";
-      ["normal","high","blocker"].forEach(v => {
-        const opt = document.createElement("option");
-        opt.value = v;
-        opt.textContent = v.toUpperCase();
-        if(v === oldSev) opt.selected = true;
-        sevSelect.appendChild(opt);
-      });
-
-      // Assignee input
-      const assigneeInput = document.createElement("input");
-      assigneeInput.type = "text";
-      assigneeInput.className = "input task__editAssignee";
-      assigneeInput.placeholder = "Assignee…";
-      assigneeInput.value = oldAssignee || "";
-
-      // Keep createdAt badge
-      const dateBadge = document.createElement("span");
-      dateBadge.className = "badge";
-      dateBadge.textContent = new Date(t.createdAt).toLocaleDateString();
-
-      // Swap UI
-      titleEl.replaceWith(titleInput);
-      metaEl.innerHTML = "";
-      metaEl.appendChild(sevSelect);
-      metaEl.appendChild(assigneeInput);
-      metaEl.appendChild(dateBadge);
-
-      // Actions: save / cancel (disable other actions while editing)
-      actionsEl.innerHTML = `
-        <button class="iconbtn" title="Save" data-act="saveEdit">✔</button>
-        <button class="iconbtn" title="Cancel" data-act="cancelEdit">↩</button>
-      `;
-
-      const commit = () => {
-        const newTitle = titleInput.value.trim() || oldTitle;
-        const newSev = /** @type any */(sevSelect.value);
-        const newAssignee = assigneeInput.value.trim();
-
-        const changedTitle = newTitle !== oldTitle;
-        const changedSev = newSev !== oldSev;
-        const changedAsg = newAssignee !== (oldAssignee || "");
-
-        t.title = newTitle;
-        t.severity = (newSev === "high" || newSev === "blocker") ? newSev : "normal";
-        t.assignee = newAssignee;
-
-        if(changedTitle) addActivity(`Renamed task: ${oldTitle} → ${newTitle}`);
-        if(changedSev) addActivity(`Updated severity: ${newTitle} → ${t.severity.toUpperCase()}`);
-        if(changedAsg) addActivity(`Updated assignee: ${newTitle} → ${newAssignee || "Unassigned"}`);
-
-        saveState();
-        renderChecklist();
-      };
-
-      const cancel = () => {
-        // Restore original values without saving
-        t.title = oldTitle;
-        t.severity = oldSev;
-        t.assignee = oldAssignee;
-        renderChecklist();
-      };
-
-      const onKey = (e) => {
-        if(e.key === "Enter"){ e.preventDefault(); commit(); }
-        if(e.key === "Escape"){ e.preventDefault(); cancel(); }
-      };
-
-      [titleInput, sevSelect, assigneeInput].forEach(inp => inp.addEventListener("keydown", onKey));
-
-      actionsEl.querySelector('[data-act="saveEdit"]').addEventListener("click", commit);
-      actionsEl.querySelector('[data-act="cancelEdit"]').addEventListener("click", cancel);
-
-      // Focus title
-      titleInput.focus();
-      titleInput.select();
+      try{
+        if(typeof openTaskEditModal_ === "function"){
+          openTaskEditModal_(m.id, t.id, el.querySelector('[data-act="editTask"]'));
+          return;
+        }
+      }catch(err){
+        console.warn("Task edit modal failed", err);
+      }
     });
 el.querySelector('[data-act="del"]').addEventListener("click", async () => {
       const ok = await pmConfirmDialog_(`Delete task "${t.title}"?`, { title:'Delete Task', okText:'Delete', danger:true });
@@ -662,7 +602,13 @@ el.querySelector('[data-act="del"]').addEventListener("click", async () => {
   }
 
   if(!m.tasks.length){
-    ui.taskList.innerHTML = `<div class="hint">No tasks yet. Click <b>Add Task</b> to create one.</div>`;
+    ui.taskList.innerHTML = `
+      <div class="phase5-checklistEmpty phase5-checklistEmpty--compact">
+        <div class="phase5-checklistEmpty__eyebrow">QUEUE READY</div>
+        <div class="phase5-checklistEmpty__title">No tasks in this milestone yet</div>
+        <div class="phase5-checklistEmpty__meta">Use <b>Add Task</b> to seed the checklist, then expand steps when you want more granular execution.</div>
+      </div>
+    `;
   }
 }
 

@@ -6,6 +6,7 @@
   const scriptOrder = [
     './js/core/base.js',
     './js/core/navigation.js',
+    './js/features/dropdown-menu.js',
     './js/features/topbar.js',
     './js/features/dashboard.js',
     './js/features/projects.js',

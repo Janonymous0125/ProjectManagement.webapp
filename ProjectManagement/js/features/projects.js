@@ -1,6 +1,8 @@
 /* ---------------------------
    Projects
 ---------------------------- */
+let projectDetailsActionMenu_ = null;
+
 function wireProjects(){
   ui.btnNewProject.addEventListener("click", newProject);
   ui.btnOpenProjectDetails?.addEventListener("click", openProjectDetailsModal);
@@ -8,11 +10,13 @@ function wireProjects(){
   ui.projectDetailsModal?.addEventListener("click", (e) => {
     if(e.target?.dataset?.closeProjectDetails === "1") closeProjectDetailsModal();
   });
-  document.addEventListener("keydown", handleProjectDetailsModalKeydown_);
 
   ui.btnSaveProject.addEventListener("click", saveProjectDetails);
   ui.btnDeleteProject.addEventListener("click", deleteActiveProject);
   ui.btnDuplicateProject.addEventListener("click", duplicateActiveProject);
+
+  ensureProjectDetailsActionMenu_();
+  document.addEventListener("keydown", handleProjectDetailsModalKeydown_);
 
   // mark dirty when editing
   [ui.projectName, ui.projectDesc, ui.projectStatus, ui.projectTag].forEach(el => {
@@ -25,7 +29,43 @@ function handleProjectDetailsModalKeydown_(e){
   if(e.defaultPrevented) return;
   if(String(e.key || "") !== "Escape") return;
   if(!ui.projectDetailsModal?.classList.contains("is-open")) return;
+  if(projectDetailsActionMenu_?.isOpen?.()) return;
   closeProjectDetailsModal();
+}
+
+function ensureProjectDetailsActionMenu_(){
+  if(projectDetailsActionMenu_?.root?.isConnected) return projectDetailsActionMenu_;
+  const mount = document.getElementById('projectDetailsHeaderMenuMount');
+  if(!mount || typeof pmDropdownCreate_ !== 'function') return null;
+
+  const existingRoot = mount.querySelector('.pm-dropdown');
+  if(existingRoot?._pmDropdownInstance){
+    projectDetailsActionMenu_ = existingRoot._pmDropdownInstance;
+    return projectDetailsActionMenu_;
+  }
+
+  const duplicateBtn = ui.btnDuplicateProject;
+  const deleteBtn = ui.btnDeleteProject;
+  if(!duplicateBtn || !deleteBtn) return null;
+
+  const menu = pmDropdownCreate_({
+    mount,
+    triggerLabel: 'Actions ▾',
+    panelMinWidth: 220,
+    rootClassName: 'pm-project-modal__actionsMenu',
+    triggerClassName: 'pm-project-modal__actionsMenuTrigger',
+    panelClassName: 'pm-project-modal__actionsMenuPanel'
+  });
+  menu.ensureSection('project-actions', 'Project Actions');
+
+  [duplicateBtn, deleteBtn].forEach((btn) => {
+    btn.classList.add('pm-dropdown__item');
+    btn.setAttribute('role', 'menuitem');
+    menu.panel.appendChild(btn);
+  });
+
+  projectDetailsActionMenu_ = menu;
+  return menu;
 }
 
 function openProjectDetailsModal(){
@@ -46,6 +86,7 @@ function openProjectDetailsModal(){
 }
 
 function closeProjectDetailsModal(){
+  projectDetailsActionMenu_?.close?.();
   ui.projectDetailsModal?.classList.remove("is-open");
   document.body.classList.remove("pm-project-modal-open");
   ui.projectDetailsModal?.setAttribute("aria-hidden", "true");

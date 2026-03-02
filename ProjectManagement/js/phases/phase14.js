@@ -825,19 +825,21 @@ function phase14BindGuardrails_(){
 
 function phase14InjectExportTab_(){
   const sidebarNav = document.querySelector('.nav');
+  const coreCluster = document.querySelector('#navClusterCore');
+  const navHost = coreCluster || sidebarNav;
   const importTab = document.querySelector('#tab-import');
-  if(!sidebarNav || !importTab) return;
+  if(!navHost || !importTab) return;
 
-  let navBtn = sidebarNav.querySelector('.nav__item[data-tab="export"]');
+  let navBtn = navHost.querySelector('.nav__item[data-tab="export"]') || document.querySelector('.nav__item[data-tab="export"]');
   if(!navBtn){
-    const importBtn = sidebarNav.querySelector('.nav__item[data-tab="import"]');
+    const importBtn = navHost.querySelector('.nav__item[data-tab="import"]') || document.querySelector('.nav__item[data-tab="import"]');
     navBtn = document.createElement('button');
     navBtn.className = 'nav__item';
     navBtn.type = 'button';
     navBtn.dataset.tab = 'export';
     navBtn.textContent = 'Export';
     if(importBtn && importBtn.parentElement) importBtn.parentElement.insertBefore(navBtn, importBtn);
-    else sidebarNav.appendChild(navBtn);
+    else navHost.appendChild(navBtn);
   }
 
   let panel = document.querySelector('#tab-export');
@@ -904,6 +906,85 @@ function phase14LoadExportUi_(){
 }
 function phase14SaveExportUi_(){ try{ localStorage.setItem(PHASE14_EXPORT_UI_KEY, JSON.stringify(phase14LoadExportUi_())); }catch{} }
 
+function phase14ReadLastExportCache_(){
+  let raw = null;
+  try{ raw = JSON.parse(localStorage.getItem(STORAGE_EXPORT_CACHE_KEY) || 'null'); }catch{}
+  if(!raw || typeof raw !== 'object') return null;
+  return {
+    ts: Number(raw.ts || 0),
+    filename: String(raw.filename || ''),
+    mime: String(raw.mime || ''),
+    kind: String(raw.kind || ''),
+    size: Number(raw.size || 0),
+  };
+}
+function phase14FormatExportSize_(n){
+  const num = Number(n || 0);
+  if(!Number.isFinite(num) || num <= 0) return '—';
+  if(num >= 1000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M chars';
+  if(num >= 1000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K chars';
+  return `${num} chars`;
+}
+function phase14ProjectExportStats_(p){
+  const out = { modules:0, milestones:0, tasks:0 };
+  if(!p || typeof p !== 'object') return out;
+  const modules = Array.isArray(p.modules) ? p.modules : [];
+  if(modules.length){
+    out.modules = modules.length;
+    modules.forEach((mod) => {
+      const milestones = Array.isArray(mod && mod.milestones) ? mod.milestones : [];
+      out.milestones += milestones.length;
+      milestones.forEach((ms) => { out.tasks += Array.isArray(ms && ms.tasks) ? ms.tasks.length : 0; });
+    });
+    return out;
+  }
+  const milestones = Array.isArray(p.milestones) ? p.milestones : [];
+  out.milestones = milestones.length;
+  milestones.forEach((ms) => { out.tasks += Array.isArray(ms && ms.tasks) ? ms.tasks.length : 0; });
+  return out;
+}
+function phase14DescribeExportType_(type){
+  const key = String(type || 'project_doc');
+  if(key === 'project_doc') return 'Project Document';
+  if(key === 'state_json') return 'Full App State';
+  if(key === 'portable_v2') return 'Portable V2 Bundle';
+  if(key === 'status_report') return 'Status Report';
+  if(key === 'risk_digest') return 'Risk Digest';
+  if(key === 'audit_activity') return 'Activity Audit';
+  if(key === 'approval_audit') return 'Approval Audit';
+  if(key === 'dashboard_views') return 'Dashboard Views';
+  if(key === 'digest_presets') return 'Digest Presets';
+  return 'Export Package';
+}
+function phase14EstimateExportFilename_(type, fmt, allProjects, p){
+  const kind = String(fmt || 'MD').toUpperCase();
+  const safeProject = phase14SafeFile_((p && p.name) || 'project');
+  const stamp = phase14DateStamp_();
+  if(type === 'project_doc') return `${safeProject}.${kind === 'TXT' ? 'txt' : 'md'}`;
+  if(type === 'state_json') return `stark_pm_export_${stamp}.json`;
+  if(type === 'portable_v2') return `stark_pm_v2_bundle_${stamp}.json`;
+  if(type === 'status_report') return `${safeProject}_status_report_${stamp}.${kind === 'TXT' ? 'txt' : 'md'}`;
+  if(type === 'risk_digest') return `risk_digest_${allProjects ? 'all' : 'active'}_${stamp}.${kind === 'TXT' ? 'txt' : 'md'}`;
+  if(type === 'audit_activity') return `audit_trail_${stamp}.${kind === 'JSON' ? 'json' : 'txt'}`;
+  if(type === 'approval_audit') return `phase14_approval_audit_${stamp}.${kind === 'TXT' ? 'txt' : 'json'}`;
+  if(type === 'dashboard_views') return `dashboard_views_${stamp}.json`;
+  if(type === 'digest_presets') return `phase13_digest_presets_${stamp}.json`;
+  return `export_${stamp}.${kind === 'JSON' ? 'json' : (kind === 'TXT' ? 'txt' : 'md')}`;
+}
+function phase14ExportToneMeta_(type, fmt, hasProject){
+  const kind = String(fmt || 'MD').toUpperCase();
+  if((type === 'project_doc' || type === 'status_report') && !hasProject){
+    return { tone:'danger', label:'Project Required' };
+  }
+  if(kind === 'JSON') return { tone:'info', label:'JSON Export' };
+  if(type === 'risk_digest' || type === 'audit_activity' || type === 'approval_audit') return { tone:'warn', label:`${kind} Audit Export` };
+  if(kind === 'TXT') return { tone:'ok', label:'TXT Export' };
+  return { tone:'ok', label:'MD Export' };
+}
+function phase14CacheExportPayload_(filename, payload, mime, kind){
+  try{ if(typeof cacheLastExport_ === 'function') cacheLastExport_(filename, payload, mime, kind); }catch{}
+}
+
 function phase14OpenExportTab_(opts){
   const uiCfg = phase14LoadExportUi_();
   if(opts && opts.type) uiCfg.type = opts.type;
@@ -928,12 +1009,49 @@ function phase14RenderExportCenter_(){
   const approvalAuditCount = (phase14LoadAudit_() || []).length;
   const dashViewsCount = (typeof phase11LoadDashViews_ === 'function') ? (phase11LoadDashViews_() || []).length : 0;
   const digestPresetCount = (typeof phase13LoadDigestPresets_ === 'function') ? (phase13LoadDigestPresets_() || []).length : 0;
+  const exportStats = phase14ProjectExportStats_(p);
+  const lastExport = phase14ReadLastExportCache_();
+  const projectCount = Array.isArray(state && state.projects) ? state.projects.length : 0;
 
   root.innerHTML = `
-    <div class="phase14-exportLayout">
-      <div class="phase14-exportCard">
-        <h4>Export Request</h4>
-        <div class="phase14-fields">
+    <div class="phase14-exportDeck">
+      <div class="phase14-exportMain phase14-exportCard phase14-exportCard--request">
+        <div class="phase14-exportHead">
+          <div class="phase14-exportHeadCopy">
+            <div class="phase14-exportEyebrow">Outbound Package</div>
+            <div class="phase14-exportTitle">Export Request</div>
+            <div class="phase14-exportSub">Build a deliberate export package with clearer format, scope, and compatibility feedback before you run the download.</div>
+          </div>
+          <div class="phase14-exportMode is-neutral" id="phase14ExportModePill">Awaiting Selection</div>
+        </div>
+
+        <div class="phase14-exportChipRow" aria-hidden="true">
+          <span class="phase14-exportChip">Project Docs</span>
+          <span class="phase14-exportChip">Backups</span>
+          <span class="phase14-exportChip">Audits</span>
+          <span class="phase14-exportChip">Digests</span>
+        </div>
+
+        <div class="phase14-exportSummaryGrid">
+          <div class="phase14-exportSummaryTile">
+            <span class="phase14-exportSummaryLabel">Projected File</span>
+            <b class="phase14-exportSummaryValue phase14-exportSummaryValue--mono" id="phase14ExportFilename">—</b>
+          </div>
+          <div class="phase14-exportSummaryTile">
+            <span class="phase14-exportSummaryLabel">Selection</span>
+            <b class="phase14-exportSummaryValue" id="phase14ExportSelectionStat">Project Document</b>
+          </div>
+          <div class="phase14-exportSummaryTile">
+            <span class="phase14-exportSummaryLabel">Scope</span>
+            <b class="phase14-exportSummaryValue" id="phase14ExportScopeStat">Active Project</b>
+          </div>
+          <div class="phase14-exportSummaryTile">
+            <span class="phase14-exportSummaryLabel">Readiness</span>
+            <b class="phase14-exportSummaryValue" id="phase14ExportReadiness">Awaiting config</b>
+          </div>
+        </div>
+
+        <div class="phase14-fields phase14-exportFields">
           <label class="field">
             <span class="field__label">What do you want to export?</span>
             <select class="select" id="phase14ExportType">
@@ -972,27 +1090,58 @@ function phase14RenderExportCenter_(){
               <option value="no">No</option>
             </select>
           </label>
-          <div class="phase14-helpItem" id="phase14ExportPreviewCard">
+          <div class="phase14-helpItem phase14-exportMessage is-info" id="phase14ExportPreviewCard">
             <b>Export details</b>
             <span id="phase14ExportDetailsText">Choose an export type.</span>
           </div>
-          <div class="phase14-toolbar">
+          <div class="phase14-toolbar phase14-exportActions">
             <button class="btn" type="button" id="phase14BtnRunExport">Run Export</button>
             <button class="btn btn--ghost" type="button" id="phase14BtnOpenImportTab">Open Import Tab</button>
             <button class="btn btn--ghost" type="button" id="phase14BtnExportRefresh">Refresh Summary</button>
           </div>
         </div>
       </div>
-      <div class="phase14-exportCard">
-        <h4>Available Sources</h4>
-        <div class="phase14-helpList">
-          <div class="phase14-helpItem"><b>Active Project</b><span>${p ? escapeHtml(String(p.name||'')) : 'No active project selected.'}</span></div>
-          <div class="phase14-helpItem"><b>Approval Audit Entries</b><span>${approvalAuditCount} entries (Phase 14 local approval audit trail)</span></div>
-          <div class="phase14-helpItem"><b>Dashboard Views</b><span>${dashViewsCount} saved views (Phase 11 / portable export supported)</span></div>
-          <div class="phase14-helpItem"><b>Digest Presets</b><span>${digestPresetCount} saved digest presets (Phase 13)</span></div>
-          <div class="phase14-helpItem"><b>Topbar Cleanup</b><span>Legacy export buttons are hidden and routed through this tab. Import buttons remain available.</span></div>
+
+      <div class="phase14-exportSide">
+        <div class="phase14-exportCard phase14-exportCard--source">
+          <div class="phase14-exportSideHead">
+            <div>
+              <div class="phase14-exportEyebrow">Live Source Context</div>
+              <div class="phase14-exportSideTitle">Available Sources</div>
+            </div>
+            <div class="phase14-exportContextBadge">${projectCount} project${projectCount === 1 ? '' : 's'}</div>
+          </div>
+
+          <div class="phase14-exportContextCard ${p ? 'is-ready' : 'is-empty'}">
+            <div class="phase14-exportContextLabel">Active Project</div>
+            <div class="phase14-exportContextName" id="phase14ExportContextName" title="${p ? escapeHtml(String(p.name || '')) : ''}">${p ? escapeHtml(String(p.name || '')) : 'No active project selected.'}</div>
+            <div class="phase14-exportContextMeta" id="phase14ExportContextMeta">${p ? `${exportStats.modules} modules • ${exportStats.milestones} milestones • ${exportStats.tasks} tasks` : 'Project-specific exports stay disabled until a project is active.'}</div>
+          </div>
+
+          <div class="phase14-helpList phase14-exportSourceList">
+            <div class="phase14-helpItem"><b>Approval Audit Entries</b><span>${approvalAuditCount} entries available from the Phase 14 approval trail.</span></div>
+            <div class="phase14-helpItem"><b>Dashboard Views</b><span>${dashViewsCount} saved views available for JSON export.</span></div>
+            <div class="phase14-helpItem"><b>Digest Presets</b><span>${digestPresetCount} saved digest presets available for JSON backup.</span></div>
+            <div class="phase14-helpItem"><b>Topbar Routing</b><span>Topbar export shortcuts stay routed into this center so the export workflow remains consistent.</span></div>
+          </div>
         </div>
-        <div class="phase14-pre" id="phase14ExportExamplePreview"></div>
+
+        <div class="phase14-exportCard phase14-exportCard--preview">
+          <div class="phase14-exportSideHead phase14-exportSideHead--tight">
+            <div>
+              <div class="phase14-exportEyebrow">Live Snapshot</div>
+              <div class="phase14-exportSideTitle">Preview + Cache</div>
+            </div>
+          </div>
+
+          <div class="phase14-exportCache ${lastExport ? 'is-ready' : 'is-empty'}" id="phase14LastExportCard">
+            <div class="phase14-exportCacheLabel">Last Cached Export</div>
+            <div class="phase14-exportCacheName" title="${lastExport ? escapeHtml(String(lastExport.filename || '')) : ''}">${lastExport ? escapeHtml(String(lastExport.filename || '')) : 'No cached export yet.'}</div>
+            <div class="phase14-exportCacheMeta">${lastExport ? `${String(lastExport.kind || 'file').toUpperCase()} • ${phase14FormatExportSize_(lastExport.size)} • ${new Date(Number(lastExport.ts || Date.now())).toLocaleString()}` : 'Compatible exports from this build will surface here after download.'}</div>
+          </div>
+
+          <div class="phase14-pre phase14-exportPreview" id="phase14ExportExamplePreview"></div>
+        </div>
       </div>
     </div>
   `;
@@ -1005,6 +1154,13 @@ function phase14RenderExportCenter_(){
   const auditWrap = root.querySelector('#phase14ExportApprovalAuditToggleWrap');
   const detailsText = root.querySelector('#phase14ExportDetailsText');
   const exPreview = root.querySelector('#phase14ExportExamplePreview');
+  const modePill = root.querySelector('#phase14ExportModePill');
+  const filenameEl = root.querySelector('#phase14ExportFilename');
+  const selectionStat = root.querySelector('#phase14ExportSelectionStat');
+  const scopeStat = root.querySelector('#phase14ExportScopeStat');
+  const readinessStat = root.querySelector('#phase14ExportReadiness');
+  const previewCard = root.querySelector('#phase14ExportPreviewCard');
+  const runBtn = root.querySelector('#phase14BtnRunExport');
 
   typeSel.value = cfg.type;
   fmtSel.value = cfg.fmt;
@@ -1054,30 +1210,63 @@ function phase14RenderExportCenter_(){
       desc = 'Phase 13 digest presets backup (status/risk export presets).';
     }
 
-    // rebuild format options safely
     const oldFmt = fmtSel.value;
     fmtSel.innerHTML = fmts.map(x => `<option value="${x}">${x}</option>`).join('');
     fmtSel.value = fmts.includes(oldFmt) ? oldFmt : fmts[0];
-    scopeWrap.classList.toggle('phase14-hidden', !allowAllScope && type !== 'risk_digest' && type !== 'state_json' && type !== 'portable_v2' && type !== 'audit_activity' && type !== 'approval_audit' && type !== 'dashboard_views' && type !== 'digest_presets');
+
+    const allowScopeControl = !(!allowAllScope && type !== 'risk_digest' && type !== 'state_json' && type !== 'portable_v2' && type !== 'audit_activity' && type !== 'approval_audit' && type !== 'dashboard_views' && type !== 'digest_presets');
+    scopeWrap.classList.toggle('phase14-hidden', !allowScopeControl);
     if(!allowAllScope) scopeSel.value = 'active';
+
     const allowExtraApproval = ['project_doc','status_report','risk_digest','audit_activity'].includes(type);
     auditWrap.classList.toggle('phase14-hidden', !allowExtraApproval);
     if(!allowExtraApproval) auditSel.value = 'no';
 
     const scopeLabel = (scopeSel.value === 'all') ? 'All Projects' : 'Active Project';
+    const needsProject = ['project_doc','status_report'].includes(type);
+    const missingProject = needsProject && !p;
+    const toneMeta = phase14ExportToneMeta_(type, fmtSel.value, !!p);
+    const projectedFile = phase14EstimateExportFilename_(type, fmtSel.value, scopeSel.value === 'all', p);
+    const readiness = missingProject ? 'Needs active project' : (auditSel.value === 'yes' ? 'Ready + audit sidecar' : 'Ready');
+
     detailsText.textContent = `${desc} Selected format: ${fmtSel.value}. Scope: ${scopeLabel}.`;
+    if(previewCard){
+      previewCard.className = `phase14-helpItem phase14-exportMessage is-${missingProject ? 'danger' : toneMeta.tone}`;
+    }
+    if(modePill){
+      modePill.className = `phase14-exportMode is-${missingProject ? 'danger' : toneMeta.tone}`;
+      modePill.textContent = missingProject ? 'Project Required' : toneMeta.label;
+    }
+    if(filenameEl){
+      filenameEl.textContent = projectedFile;
+      filenameEl.title = projectedFile;
+    }
+    if(selectionStat){
+      const label = phase14DescribeExportType_(type);
+      selectionStat.textContent = label;
+      selectionStat.title = label;
+    }
+    if(scopeStat) scopeStat.textContent = scopeLabel;
+    if(readinessStat) readinessStat.textContent = readiness;
+    if(runBtn){
+      runBtn.disabled = missingProject;
+      runBtn.title = missingProject ? 'Select an active project first.' : 'Run export';
+    }
 
     const previewLines = [];
-    previewLines.push(`Type: ${type}`);
+    previewLines.push(`Type: ${phase14DescribeExportType_(type)} (${type})`);
     previewLines.push(`Format: ${fmtSel.value}`);
-    previewLines.push(`Scope: ${scopeSel.value}`);
+    previewLines.push(`Projected file: ${projectedFile}`);
+    previewLines.push(`Scope: ${scopeLabel}`);
     if(p) previewLines.push(`Active Project: ${p.name}`);
+    if(type === 'project_doc' || type === 'status_report') previewLines.push(`Active project payload: ${exportStats.modules} modules • ${exportStats.milestones} milestones • ${exportStats.tasks} tasks`);
     if(type === 'approval_audit') previewLines.push(`Approval Audit Entries: ${approvalAuditCount}`);
     if(type === 'dashboard_views') previewLines.push(`Dashboard Views: ${dashViewsCount}`);
     if(type === 'digest_presets') previewLines.push(`Digest Presets: ${digestPresetCount}`);
-    if(auditSel.value === 'yes') previewLines.push(`Extra approval audit sidecar: YES`);
+    if(type === 'state_json' || type === 'portable_v2' || scopeSel.value === 'all') previewLines.push(`Projects in scope: ${projectCount}`);
+    if(auditSel.value === 'yes') previewLines.push('Extra approval audit sidecar: YES');
     previewLines.push('');
-    previewLines.push('Tip: Use the topbar Export button to jump back here anytime.');
+    previewLines.push(missingProject ? 'Action needed: select an active project before running this export.' : 'Tip: Use the topbar Export button to jump back here anytime.');
     exPreview.textContent = previewLines.join('\n');
 
     cfg.type = type;
@@ -1135,9 +1324,15 @@ function phase14ExportApprovalAudit_(fmt){
   const rows = phase14LoadAudit_();
   if(kind === 'JSON'){
     const payload = { version:1, exportedAt:Date.now(), type:'phase14_approval_audit', rows };
-    downloadText(`phase14_approval_audit_${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    const textPayload = JSON.stringify(payload, null, 2);
+    const filename = `phase14_approval_audit_${stamp}.json`;
+    phase14CacheExportPayload_(filename, textPayload, 'application/json', 'json');
+    downloadText(filename, textPayload, 'application/json');
   } else {
-    downloadText(`phase14_approval_audit_${stamp}.txt`, phase14ApprovalAuditText_(), 'text/plain');
+    const textPayload = phase14ApprovalAuditText_();
+    const filename = `phase14_approval_audit_${stamp}.txt`;
+    phase14CacheExportPayload_(filename, textPayload, 'text/plain', 'txt');
+    downloadText(filename, textPayload, 'text/plain');
   }
   try{ addActivity(`Phase14 exported approval audit (${kind})`); }catch{}
   try{ saveState({ skipHistory:true }); }catch{}
@@ -1160,10 +1355,14 @@ function phase14RunExportCenterRequest_(){
       const safe = phase14SafeFile_(p.name || 'project');
       if(fmt === 'TXT'){
         if(typeof serializeProjectToText_ !== 'function') throw new Error('Project TXT export helper not found');
-        downloadText(`${safe}.txt`, serializeProjectToText_(p), 'text/plain');
+        const payload = serializeProjectToText_(p);
+        phase14CacheExportPayload_(`${safe}.txt`, payload, 'text/plain', 'txt');
+        downloadText(`${safe}.txt`, payload, 'text/plain');
       } else {
         if(typeof serializeProjectToMarkdown_ !== 'function') throw new Error('Project MD export helper not found');
-        downloadText(`${safe}.md`, serializeProjectToMarkdown_(p), 'text/markdown');
+        const payload = serializeProjectToMarkdown_(p);
+        phase14CacheExportPayload_(`${safe}.md`, payload, 'text/markdown', 'md');
+        downloadText(`${safe}.md`, payload, 'text/markdown');
       }
       addActivity(`Phase14 export center exported project doc (${fmt}): ${p.name}`);
       if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
@@ -1172,7 +1371,10 @@ function phase14RunExportCenterRequest_(){
 
     if(type === 'state_json'){
       const payload = (typeof sanitizeState === 'function') ? sanitizeState(state) : state;
-      downloadText(`stark_pm_export_${phase14DateStamp_()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      const textPayload = JSON.stringify(payload, null, 2);
+      const filename = `stark_pm_export_${phase14DateStamp_()}.json`;
+      phase14CacheExportPayload_(filename, textPayload, 'application/json', 'json');
+      downloadText(filename, textPayload, 'application/json');
       addActivity('Phase14 export center exported full state JSON');
       return;
     }
@@ -1195,7 +1397,9 @@ function phase14RunExportCenterRequest_(){
       const txt = phase10BuildStatusReport_(kind);
       if(!txt){ alert('Could not build status report.'); return; }
       const safe = phase14SafeFile_(String(p.name||'project'));
-      downloadText(`${safe}_status_report_${phase14DateStamp()}.${kind === 'md' ? 'md' : 'txt'}`, txt, kind === 'md' ? 'text/markdown' : 'text/plain');
+      const filename = `${safe}_status_report_${phase14DateStamp()}.${kind === 'md' ? 'md' : 'txt'}`;
+      phase14CacheExportPayload_(filename, txt, kind === 'md' ? 'text/markdown' : 'text/plain', kind);
+      downloadText(filename, txt, kind === 'md' ? 'text/markdown' : 'text/plain');
       addActivity(`Phase14 export center exported status report (${fmt}): ${p.name}`);
       if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
       return;
@@ -1209,7 +1413,9 @@ function phase14RunExportCenterRequest_(){
       const kind = (fmt === 'TXT') ? 'TXT' : 'MD';
       const txt = phase12BuildRiskDigestText_(kind, d);
       const scope = allProjects ? 'all' : 'active';
-      downloadText(`risk_digest_${scope}_${phase14DateStamp()}.${kind === 'MD' ? 'md' : 'txt'}`, txt, kind === 'MD' ? 'text/markdown' : 'text/plain');
+      const filename = `risk_digest_${scope}_${phase14DateStamp()}.${kind === 'MD' ? 'md' : 'txt'}`;
+      phase14CacheExportPayload_(filename, txt, kind === 'MD' ? 'text/markdown' : 'text/plain', kind.toLowerCase());
+      downloadText(filename, txt, kind === 'MD' ? 'text/markdown' : 'text/plain');
       addActivity(`Phase14 export center exported risk digest (${kind}) [${scope}]`);
       if(includeApprovalAudit) phase14ExportApprovalAudit_(kind === 'TXT' ? 'TXT' : 'JSON');
       return;
@@ -1220,8 +1426,18 @@ function phase14RunExportCenterRequest_(){
         phase9ExportAuditTrail_(fmt === 'JSON' ? 'json' : 'txt');
       } else {
         const rows = Array.isArray(state?.activity) ? state.activity : [];
-        if(fmt === 'JSON') downloadText(`audit_trail_${phase14DateStamp()}.json`, JSON.stringify({ rows }, null, 2), 'application/json');
-        else downloadText(`audit_trail_${phase14DateStamp()}.txt`, rows.map(a => `[${new Date(Number(a.ts||Date.now())).toLocaleString()}] ${String(a.msg||'')}`).join('\n'), 'text/plain');
+        if(fmt === 'JSON'){
+          const textPayload = JSON.stringify({ rows }, null, 2);
+          const filename = `audit_trail_${phase14DateStamp()}.json`;
+          phase14CacheExportPayload_(filename, textPayload, 'application/json', 'json');
+          downloadText(filename, textPayload, 'application/json');
+        }
+        else {
+          const textPayload = rows.map(a => `[${new Date(Number(a.ts||Date.now())).toLocaleString()}] ${String(a.msg||'')}`).join('\n');
+          const filename = `audit_trail_${phase14DateStamp()}.txt`;
+          phase14CacheExportPayload_(filename, textPayload, 'text/plain', 'txt');
+          downloadText(filename, textPayload, 'text/plain');
+        }
         addActivity(`Phase14 export center exported audit trail fallback (${fmt})`);
       }
       if(includeApprovalAudit) phase14ExportApprovalAudit_(fmt === 'TXT' ? 'TXT' : 'JSON');
@@ -1237,7 +1453,10 @@ function phase14RunExportCenterRequest_(){
       let views = [];
       try{ views = (typeof phase11LoadDashViews_ === 'function') ? (phase11LoadDashViews_() || []) : []; }catch{ views = []; }
       const payload = { version:1, exportedAt:Date.now(), type:'phase11_dashboard_views', views };
-      downloadText(`dashboard_views_${phase14DateStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      const textPayload = JSON.stringify(payload, null, 2);
+      const filename = `dashboard_views_${phase14DateStamp()}.json`;
+      phase14CacheExportPayload_(filename, textPayload, 'application/json', 'json');
+      downloadText(filename, textPayload, 'application/json');
       addActivity(`Phase14 export center exported dashboard views (${views.length})`);
       return;
     }
@@ -1246,7 +1465,10 @@ function phase14RunExportCenterRequest_(){
       let presets = [];
       try{ presets = (typeof phase13LoadDigestPresets_ === 'function') ? (phase13LoadDigestPresets_() || []) : []; }catch{ presets = []; }
       const payload = { version:1, exportedAt:Date.now(), presets };
-      downloadText(`phase13_digest_presets_${phase14DateStamp()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      const textPayload = JSON.stringify(payload, null, 2);
+      const filename = `phase13_digest_presets_${phase14DateStamp()}.json`;
+      phase14CacheExportPayload_(filename, textPayload, 'application/json', 'json');
+      downloadText(filename, textPayload, 'application/json');
       addActivity(`Phase14 export center exported digest presets (${presets.length})`);
       return;
     }

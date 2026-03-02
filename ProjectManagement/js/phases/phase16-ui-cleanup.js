@@ -8,6 +8,13 @@
 var PHASE16_POLISH_KEY = 'stark_pm_phase16_ui_polish_v1';
 var phase16PolishState_ = { inited:false, raf:0, bound:false };
 
+function phase16PolishSyncWorkspaceNavState_(){
+  const workspaceCluster = document.querySelector('#navClusterWorkspace');
+  if(!workspaceCluster) return;
+  const hasItems = !!workspaceCluster.querySelector('.nav__item, #phase20AdvSplitNavGroup');
+  workspaceCluster.dataset.populated = hasItems ? 'true' : 'false';
+}
+
 function initPhase16Polish_(){
   if(phase16PolishState_.inited) return;
   phase16PolishState_.inited = true;
@@ -20,7 +27,7 @@ function initPhase16Polish_(){
 
 function phase16PolishEnsureWorkspaceTab_(){
   const sidebarNav = document.querySelector('.nav');
-  const dashNavBtn = sidebarNav && sidebarNav.querySelector('.nav__item[data-tab="dashboard"]');
+  const workspaceCluster = sidebarNav && sidebarNav.querySelector('#navClusterWorkspace');
   const dashboardTab = document.querySelector('#tab-dashboard');
   if(!sidebarNav || !dashboardTab || !dashboardTab.parentElement) return;
 
@@ -31,9 +38,10 @@ function phase16PolishEnsureWorkspaceTab_(){
     navBtn.type = 'button';
     navBtn.dataset.tab = 'advanced-panels';
     navBtn.innerHTML = '<span class="nav__icon">▦</span><span class="nav__text">Advanced Panels</span>';
-    if(dashNavBtn && dashNavBtn.parentElement) dashNavBtn.insertAdjacentElement('afterend', navBtn);
+    if(workspaceCluster) workspaceCluster.appendChild(navBtn);
     else sidebarNav.appendChild(navBtn);
   }
+  try{ phase16PolishSyncWorkspaceNavState_(); }catch{}
 
   let panel = document.querySelector('#tab-advanced-panels');
   if(!panel){
@@ -61,8 +69,8 @@ function phase16PolishEnsureWorkspaceTab_(){
     navBtn._phase16PolishBound = true;
   }
 
-  try{ phase16PolishEnsureSidebarNavDropdown_(navBtn); }catch(err){ console.warn('Phase16 polish sidebar dropdown failed', err); }
-  try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+  try{ phase16PolishRemoveSidebarNavDropdown_(); }catch(err){ console.warn('Phase16 polish sidebar dropdown cleanup failed', err); }
+  try{ phase16PolishSyncWorkspaceNavState_(); }catch{}
 }
 
 function phase16PolishEnsureStyles_(){
@@ -126,6 +134,22 @@ function phase16PolishEnsureStyles_(){
     #phase16DashboardFocusCard .phase16polish-focusHint{font-size:11px;opacity:.78}
     #phase16DashboardFocusCard .phase16polish-hidden{display:none !important}
     @media (max-width:1100px){ #phase16DashboardFocusCard .phase16polish-focusStats{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    @media (max-width:820px){
+      #phase16PolishDashRoot .phase16polish-grid{grid-template-columns:1fr}
+      #phase16PolishDashRoot .phase16polish-head,
+      #phase16PolishDashRoot .phase16polish-catalogHead,
+      #phase16DashboardFocusCard .phase16polish-focusTop{align-items:stretch}
+      #phase16PolishDashRoot .phase16polish-catalogTools,
+      #phase16PolishDashRoot .phase16polish-catalogJumpWrap{display:grid;grid-template-columns:1fr}
+      #phase16PolishDashRoot .phase16polish-catalogSelect,
+      #phase16PolishDashRoot .phase16polish-catalogJump,
+      #phase16PolishDashRoot .phase16polish-catalogSearch{min-width:0;max-width:100%;width:100%;flex:1 1 100%}
+    }
+    @media (max-width:560px){
+      #phase16PolishDashRoot{padding:8px}
+      #phase16PolishDashRoot .phase16polish-body{padding:8px}
+      #phase16DashboardFocusCard .phase16polish-focusStats{grid-template-columns:1fr}
+    }
     /* Milestone 3: visual rhythm + typography normalization (Dashboard/Advanced/Portfolio) */
     #tab-dashboard .card, #tab-advanced-panels .card, #tab-portfolio .card{padding:14px;border-radius:14px}
     #tab-dashboard .card__top, #tab-advanced-panels .card__top, #tab-portfolio .card__top{gap:8px;margin-bottom:8px}
@@ -142,14 +166,7 @@ function phase16PolishEnsureStyles_(){
     #phase16PolishDashRoot .phase16polish-body{padding:12px;gap:12px}
     #phase16PolishDashRoot .phase16polish-catalog{padding:12px}
     #phase16PolishDashRoot .phase16polish-catalogHead{margin-bottom:10px}
-    /* Sidebar nav dropdown (requested) */
-    .nav .phase16polish-navDropdown{display:grid;gap:6px;padding:8px 10px;margin:-2px 0 4px 0;border-radius:12px;border:1px solid rgba(56,246,255,.10);background:rgba(10,18,28,.16)}
-    .nav .phase16polish-navDropdown.is-hidden{display:none}
-    .nav .phase16polish-navDropdownLabel{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
-    .nav .phase16polish-navDropdownSelect{width:100%;padding:8px 10px;border-radius:10px;border:1px solid rgba(56,246,255,.12);background:rgba(10,18,28,.35);color:inherit;font-family:var(--mono);font-size:11px}
-    .nav .phase16polish-navDropdown .btn{width:100%}
-    .nav .phase16polish-navDropdownHint{font-size:10px;opacity:.7;line-height:1.35}
-    /* Revert tab-level dropdown controls (moved to sidebar nav) */
+    /* Keep the workspace catalog focused; no extra sidebar-mounted advanced-panel dropdowns. */
     #phase16PolishDashRoot #phase16PolishCatalogCategory,
     #phase16PolishDashRoot .phase16polish-catalogJumpWrap,
     #phase16PolishDashRoot #phase16PolishCatalogJumpHint{display:none !important}
@@ -251,48 +268,11 @@ function phase16PolishGetCatalogItems_(root){
 }
 
 
-function phase16PolishEnsureSidebarNavDropdown_(navBtn){
-  if(!navBtn || !navBtn.parentElement) return null;
-  let wrap = navBtn.parentElement.querySelector('#phase16PolishSidebarNavDropdown');
-  if(!wrap){
-    wrap = document.createElement('div');
-    wrap.id = 'phase16PolishSidebarNavDropdown';
-    wrap.className = 'phase16polish-navDropdown is-hidden';
-    wrap.innerHTML = `
-      <div class="phase16polish-navDropdownLabel">Advanced Panel Dropdown</div>
-      <select id="phase16PolishSidebarNavSelect" class="phase16polish-navDropdownSelect" title="Advanced panel navigation">
-        <option value="">Loading advanced panels…</option>
-      </select>
-      <button class="btn btn--ghost" type="button" id="phase16PolishSidebarNavOpen">Open Selected Panel</button>
-      <div class="phase16polish-navDropdownHint" id="phase16PolishSidebarNavHint">Categorized dropdown from the Advanced Panels workspace.</div>
-    `;
-    navBtn.insertAdjacentElement('afterend', wrap);
-  }
-  if(!wrap._phase16PolishSidebarBound){
-    const sel = wrap.querySelector('#phase16PolishSidebarNavSelect');
-    const btn = wrap.querySelector('#phase16PolishSidebarNavOpen');
-    const openSelected = ()=>{
-      const panelId = String(sel?.value || '');
-      if(!panelId) return;
-      const root = document.querySelector('#phase16PolishDashRoot');
-      if(root){
-        try{ phase16PolishOpenCatalogItem_(root, panelId); }catch{}
-      }else{
-        try{ switchTab('advanced-panels'); }catch{}
-        setTimeout(()=>{ try{ phase16PolishSchedule_(); }catch{} }, 30);
-      }
-    };
-    sel?.addEventListener('change', openSelected);
-    btn?.addEventListener('click', openSelected);
-    wrap._phase16PolishSidebarBound = true;
-  }
-  return wrap;
-}
-
-function phase16PolishRenderSidebarNavDropdown_(){
+function phase16PolishRemoveSidebarNavDropdown_(){
   const wrap = document.querySelector('#phase16PolishSidebarNavDropdown');
   if(wrap) wrap.remove();
 }
+
 
 function phase16PolishBindCatalog_(root){
   if(!root || root._phase16PolishCatalogBound) return;
@@ -459,6 +439,7 @@ function phase16PolishEnsureDashboardRoot_(tab){
   if(!root){
     root = document.createElement('div');
     root.id = 'phase16PolishDashRoot';
+    root.className = 'phase16polish-shell';
     root.innerHTML = `
       <div class="phase16polish-head">
         <div>
@@ -666,7 +647,7 @@ function phase16PolishApplyDashboardCleanup_(){
   });
   try{ phase16PolishEnsureDashboardFocusCard_(dashboardTab, root); }catch(err){ console.warn('Phase16 dashboard focus card failed', err); }
   try{ phase16PolishRenderCatalog_(root); }catch{}
-  try{ phase16PolishRenderSidebarNavDropdown_(); }catch{}
+  try{ phase16PolishRemoveSidebarNavDropdown_(); }catch{}
 }
 
 try{ initPhase16Polish_(); }catch(err){ console.warn('Phase16 polish init failed', err); }

@@ -2,6 +2,14 @@
    Import
 ---------------------------- */
 function wireImport(){
+  ui.fileInput.addEventListener("change", () => {
+    syncImportSourceMeta_();
+  });
+
+  ui.pasteArea.addEventListener("input", () => {
+    syncImportSourceMeta_();
+  });
+
   ui.btnParse.addEventListener("click", async () => {
     const text = (ui.pasteArea.value || "").trim();
     const file = ui.fileInput.files?.[0] ?? null;
@@ -18,6 +26,10 @@ function wireImport(){
 
     if(!content.trim()){
       ui.importMsg.textContent = "Nothing to parse yet.";
+      ui.importMsg.title = ui.importMsg.textContent;
+      setImportBannerTone_("warn");
+      setImportPreviewMode_("Awaiting Parse", "neutral");
+      syncImportSourceMeta_();
       return;
     }
 
@@ -29,6 +41,9 @@ function wireImport(){
       importCandidate = null;
       renderImportPreview();
       ui.importMsg.textContent = `Parse error: ${String(err?.message || err)}`;
+      ui.importMsg.title = ui.importMsg.textContent;
+      setImportBannerTone_("danger");
+      setImportPreviewMode_("Parse Error", "danger");
     }
   });
 
@@ -38,6 +53,9 @@ function wireImport(){
     importCandidate = null;
     renderImportPreview();
     ui.importMsg.textContent = "Cleared import buffer.";
+    ui.importMsg.title = ui.importMsg.textContent;
+    setImportBannerTone_("ok");
+    syncImportSourceMeta_();
   });
 
   ui.btnImport.addEventListener("click", () => {
@@ -65,9 +83,13 @@ function wireImport(){
     if(!f) return;
     if(!/\.md$|\.txt$|\.json$/i.test(f.name)){
       ui.importMsg.textContent = "Only .md, .txt, or .json files are supported.";
+      ui.importMsg.title = ui.importMsg.textContent;
+      setImportBannerTone_("danger");
+      setImportPreviewMode_("Unsupported File", "danger");
       return;
     }
     ui.fileInput.files = e.dataTransfer.files;
+    syncImportSourceMeta_();
     const content = await f.text();
     try{
       importCandidate = makeImportCandidate(content, guessExt(f.name));
@@ -77,8 +99,13 @@ function wireImport(){
       importCandidate = null;
       renderImportPreview();
       ui.importMsg.textContent = `Parse error: ${String(err?.message || err)}`;
+      ui.importMsg.title = ui.importMsg.textContent;
+      setImportBannerTone_("danger");
+      setImportPreviewMode_("Parse Error", "danger");
     }
   });
+
+  syncImportSourceMeta_();
 }
 
 function guessExt(name){
@@ -92,6 +119,54 @@ function guessPastedImportExt_(text){
   if(!src) return "txt";
   if(looksLikeJsonStateText_(src)) return "json";
   return "txt";
+}
+
+function describeImportExt_(ext){
+  if(ext === "json") return "JSON state restore";
+  if(ext === "md") return "Markdown project doc";
+  return "Plain text project doc";
+}
+
+function syncImportSourceMeta_(){
+  const file = ui.fileInput.files?.[0] ?? null;
+  const pasted = String(ui.pasteArea.value || "").trim();
+  const ext = file ? guessExt(file.name) : guessPastedImportExt_(pasted);
+  const sourceText = file
+    ? `Selected file: ${file.name}`
+    : pasted
+      ? `Pasted text staged: ${pasted.split(/\n+/).filter(Boolean).length} line(s)`
+      : "No file selected. You can also paste text below.";
+  const typeText = file || pasted
+    ? `Parser mode: ${describeImportExt_(ext)}`
+    : "Parser mode: Awaiting source";
+
+  if(ui.importSourceFile){
+    ui.importSourceFile.textContent = sourceText;
+    ui.importSourceFile.title = sourceText;
+  }
+  if(ui.importSourceType){
+    ui.importSourceType.textContent = typeText;
+    ui.importSourceType.title = typeText;
+  }
+}
+
+function setImportBannerTone_(tone){
+  if(!ui.importMsg) return;
+  ui.importMsg.classList.remove("is-neutral", "is-info", "is-ok", "is-warn", "is-danger");
+  ui.importMsg.classList.add(tone && /^is-/.test(tone) ? tone : `is-${tone || "neutral"}`);
+}
+
+function setImportPreviewMode_(label, tone){
+  if(!ui.importPreviewMode) return;
+  ui.importPreviewMode.textContent = label;
+  ui.importPreviewMode.title = label;
+  ui.importPreviewMode.classList.remove("is-neutral", "is-info", "is-ok", "is-warn", "is-danger");
+  ui.importPreviewMode.classList.add(tone && /^is-/.test(tone) ? tone : `is-${tone || "neutral"}`);
+}
+
+function getImportWarningCount_(cand){
+  const warnings = cand?.diagnostics?.warnings;
+  return Array.isArray(warnings) ? warnings.length : 0;
 }
 
 function looksLikeJsonStateText_(text){
@@ -342,12 +417,18 @@ function renderImportPreview(){
 
   if(!cand){
     ui.previewProjectName.textContent = "—";
+    ui.previewProjectName.title = "";
     ui.previewMilestones.textContent = "0";
     ui.previewTasks.textContent = "0";
+    if(ui.previewWarnings) ui.previewWarnings.textContent = "0";
+    setImportPreviewMode_("Awaiting Parse", "neutral");
     ui.previewTree.innerHTML = `<div class="preview__empty">Parse a file to see a preview.</div>`;
     ui.btnImport.disabled = true;
     ui.btnImportAsNew.disabled = true;
     ui.importMsg.textContent = "—";
+    ui.importMsg.title = "";
+    setImportBannerTone_("neutral");
+    syncImportSourceMeta_();
     return;
   }
 
@@ -355,10 +436,13 @@ function renderImportPreview(){
     const diag = cand.diagnostics || {};
     const incoming = diag.incomingCounts || computeCountsForState_(cand.state);
     const current = diag.currentCounts || computeCountsForState_(state);
+    const warnCount = getImportWarningCount_(cand);
 
     ui.previewProjectName.textContent = "[JSON STATE RESTORE]";
+    ui.previewProjectName.title = ui.previewProjectName.textContent;
     ui.previewMilestones.textContent = String(incoming.milestones || 0);
     ui.previewTasks.textContent = String(incoming.tasks || 0);
+    if(ui.previewWarnings) ui.previewWarnings.textContent = String(warnCount);
 
     ui.btnImport.disabled = false;
     ui.btnImportAsNew.disabled = true;
@@ -370,33 +454,44 @@ function renderImportPreview(){
 
     ui.importMsg.textContent =
       `JSON STATE PREVIEW • Restore replaces local data • Current ${current.projects}P/${current.milestones}M/${current.tasks}T → Incoming ${incoming.projects}P/${incoming.milestones}M/${incoming.tasks}T` + warnSuffix;
+    ui.importMsg.title = ui.importMsg.textContent;
+    setImportBannerTone_(warnCount ? "warn" : "info");
+    setImportPreviewMode_("JSON Restore", warnCount ? "warn" : "info");
 
     ui.previewTree.innerHTML = buildStatePreviewTree_(cand.state);
+    syncImportSourceMeta_();
     return;
   }
 
   const p = cand.project;
   const counts = computeProjectCounts(p);
+  const diag = cand.diagnostics || null;
+  const warnCount = getImportWarningCount_(cand);
 
   ui.previewProjectName.textContent = p.name;
+  ui.previewProjectName.title = p.name;
   ui.previewMilestones.textContent = String(counts.milestones);
   ui.previewTasks.textContent = String(counts.tasks);
+  if(ui.previewWarnings) ui.previewWarnings.textContent = String(warnCount);
 
   ui.btnImport.disabled = false;
   ui.btnImportAsNew.disabled = false;
 
   const already = cand.existsMatchId ? "MATCH FOUND (will merge if you click Import)" : "NO MATCH (Import will create new)";
-  const diag = cand.diagnostics || null;
   const warnSuffix = (diag && Array.isArray(diag.warnings) && diag.warnings.length)
     ? ` • WARN ${diag.warnings.length}: ${diag.warnings.slice(0,2).join("; ")}`
     : "";
   const target = cand.existsMatchId ? state.projects.find(x => x.id === cand.existsMatchId) : null;
   const mergeImpact = target ? computeMergeImpact_(target, cand.project) : null;
   ui.importMsg.textContent = already + warnSuffix + buildMergeImpactHint_(mergeImpact);
+  ui.importMsg.title = ui.importMsg.textContent;
+  setImportBannerTone_(warnCount ? "warn" : (cand.existsMatchId ? "info" : "ok"));
+  setImportPreviewMode_(cand.existsMatchId ? "Merge Preview" : "New Project Preview", warnCount ? "warn" : (cand.existsMatchId ? "info" : "ok"));
 
   ui.previewTree.innerHTML = buildPreviewTree(p)
     + (diag ? buildImportDiagnosticsHtml_(diag) : "")
     + (mergeImpact ? buildMergeImpactHtml_(mergeImpact) : "");
+  syncImportSourceMeta_();
 }
 
 function buildPreviewTree(p){
@@ -707,6 +802,8 @@ function parseProjectFromText(text, ext){
   /** @type {{kind:'desc'|'notes', buf:string[]} | null} */
   let pmBlock = null;
 
+  /** @type {'project'|'module'|'milestone'} */
+  let pmScope = "project";
   let seenModuleHeader = false;
 
   const isPlaceholderMilestone = (ms) => {
@@ -732,10 +829,39 @@ function parseProjectFromText(text, ext){
     lastTask = null;
   };
 
+  const applyPmText = (kind, value) => {
+    const normalized = String(value ?? "").replace(/\r\n/g, "\n").trimEnd();
+    if(kind === "notes"){
+      if(currentMs) currentMs.notes = normalized;
+      return;
+    }
+    if(pmScope === "module" && currentMod){
+      currentMod.desc = normalized;
+      return;
+    }
+    p.desc = normalized;
+  };
+
+  const normalizeModuleStatus = (value) => {
+    const v = String(value || "").trim().toLowerCase();
+    if(v === "active") return "doing";
+    if(v === "todo" || v === "doing" || v === "done") return v;
+    return "";
+  };
+
+  const normalizeMilestoneState = (value) => {
+    const v = String(value || "").trim().toLowerCase();
+    if(v === "planned") return "todo";
+    if(v === "active") return "doing";
+    if(v === "todo" || v === "doing" || v === "done") return v;
+    return "";
+  };
+
   const pushMilestone = (title) => {
     const t = (title || "").trim();
     if(!t) return;
     if(!currentMod) ensureModule("General");
+    pmScope = "milestone";
 
     const ms = mkMilestone(t);
 
@@ -766,8 +892,7 @@ function parseProjectFromText(text, ext){
       const end = line.match(/^@pm\s+(desc|notes)\s*:\s*>>>\s*$/i);
       if(end){
         const joined = pmBlock.buf.join("\n").replace(/\r\n/g, "\n").trimEnd();
-        if(pmBlock.kind === "desc") p.desc = joined;
-        if(pmBlock.kind === "notes" && currentMs) currentMs.notes = joined;
+        applyPmText(pmBlock.kind, joined);
         pmBlock = null;
         continue;
       }
@@ -812,6 +937,7 @@ function parseProjectFromText(text, ext){
     const pmProject = line.match(/^@pm\s+project\s+(.+)$/i);
     if(pmProject){
       const kv = parsePmKv_(pmProject[1]);
+      pmScope = "project";
       if(kv.status && (kv.status === "active" || kv.status === "paused" || kv.status === "done")) p.status = kv.status;
       if(kv.tag !== undefined) p.tag = String(kv.tag || "");
       continue;
@@ -819,7 +945,7 @@ function parseProjectFromText(text, ext){
 
     const pmDesc = line.match(/^@pm\s+desc\s*:\s*(.+)$/i);
     if(pmDesc){
-      p.desc = pmDesc[1].trim();
+      applyPmText("desc", pmDesc[1].trim());
       continue;
     }
 
@@ -827,7 +953,9 @@ function parseProjectFromText(text, ext){
     if(pmModule){
       const kv = parsePmKv_(pmModule[1]);
       if(!currentMod) ensureModule("General");
-      if(kv.status && (kv.status === "todo" || kv.status === "doing" || kv.status === "done")) currentMod.status = kv.status;
+      pmScope = "module";
+      const modStatus = normalizeModuleStatus(kv.status);
+      if(modStatus) currentMod.status = modStatus;
       if(kv.tag !== undefined) currentMod.tag = String(kv.tag || "");
       continue;
     }
@@ -835,16 +963,18 @@ function parseProjectFromText(text, ext){
     const pmMilestone = line.match(/^@pm\s+milestone\s+(.+)$/i);
     if(pmMilestone){
       const kv = parsePmKv_(pmMilestone[1]);
+      pmScope = "milestone";
       if(currentMs){
         if(kv.priority && (kv.priority === "p1" || kv.priority === "p2" || kv.priority === "p3")) currentMs.priority = kv.priority;
-        if(kv.state && (kv.state === "todo" || kv.state === "doing" || kv.state === "done")) currentMs.state = kv.state;
+        const milestoneState = normalizeMilestoneState(kv.state);
+        if(milestoneState) currentMs.state = milestoneState;
       }
       continue;
     }
 
     const pmNotes = line.match(/^@pm\s+notes\s*:\s*(.+)$/i);
     if(pmNotes){
-      if(currentMs) currentMs.notes = pmNotes[1].trim();
+      applyPmText("notes", pmNotes[1].trim());
       continue;
     }
 
@@ -871,6 +1001,7 @@ function parseProjectFromText(text, ext){
 
       const title = cleanupTitle(after ? `MODULE ${num} - ${after}` : `MODULE ${num}`);
       ensureModule(title || `MODULE ${num}`);
+      pmScope = "module";
       continue;
     }
 

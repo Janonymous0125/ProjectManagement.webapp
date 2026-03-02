@@ -32,6 +32,7 @@ function initTopbarDeclutter_(){
     'phase16BtnTeamProfiles'
   ]);
   const proxyMap = new Map();
+  const menuRegistry = new Map();
   let autoIdSeq = 0;
 
   function ensureId_(el){
@@ -49,81 +50,46 @@ function initTopbarDeclutter_(){
 
   function mkMenu_(key, triggerLabel, anchorEl){
     const existing = topbarRight.querySelector(`.topbar-menu[data-menu-key="${key}"]`);
-    if(existing){
-      return {
-        root: existing,
-        trigger: existing.querySelector('.topbar-menu__trigger'),
-        panel: existing.querySelector('.topbar-menu__panel')
-      };
-    }
+    if(existing && existing._pmDropdownInstance) return existing._pmDropdownInstance;
 
-    const root = document.createElement('div');
-    root.className = 'topbar-menu';
-    root.dataset.menuKey = key;
+    const inst = (typeof pmDropdownCreate_ === 'function')
+      ? pmDropdownCreate_({
+          mount: topbarRight,
+          anchor: anchorEl,
+          triggerLabel,
+          panelMinWidth: 220,
+          rootClassName: 'topbar-menu',
+          triggerClassName: 'topbar-menu__trigger',
+          panelClassName: 'topbar-menu__panel',
+          dataset: { menuKey: key }
+        })
+      : null;
 
-    const trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.className = 'btn btn--ghost topbar-menu__trigger';
-    trigger.setAttribute('aria-haspopup', 'menu');
-    trigger.setAttribute('aria-expanded', 'false');
-    trigger.textContent = triggerLabel;
+    if(!inst) throw new Error('Shared dropdown component is not available');
 
-    const panel = document.createElement('div');
-    panel.className = 'topbar-menu__panel';
-    panel.setAttribute('role', 'menu');
-
-    root.appendChild(trigger);
-    root.appendChild(panel);
-
-    const anchor = anchorEl && anchorEl.parentElement === topbarRight ? anchorEl : null;
-    topbarRight.insertBefore(root, anchor);
-
-    trigger.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const isOpen = root.classList.contains('is-open');
-      closeMenus_();
-      if(!isOpen){
-        syncProxyStates_();
-        root.classList.add('is-open');
-        trigger.setAttribute('aria-expanded', 'true');
-      }
+    menuRegistry.set(key, inst);
+    inst.trigger.addEventListener('click', () => {
+      if(inst.isOpen()) syncProxyStates_();
     });
-
-    return { root, trigger, panel };
+    return inst;
   }
 
   function closeMenus_(){
-    topbarRight.querySelectorAll('.topbar-menu.is-open').forEach((menu) => {
-      menu.classList.remove('is-open');
-      const t = menu.querySelector('.topbar-menu__trigger');
-      if(t) t.setAttribute('aria-expanded', 'false');
+    menuRegistry.forEach((menu) => {
+      try{ menu.close(); }catch{}
     });
   }
-
-  document.addEventListener('click', (ev) => {
-    if(!topbarRight.contains(ev.target)) closeMenus_();
-  });
-  document.addEventListener('keydown', (ev) => {
-    if(ev.key === 'Escape') closeMenus_();
-  });
 
   const exportMenu = mkMenu_('export', 'Export ▾', document.getElementById('btnExportJson'));
   const toolsMenu = mkMenu_('tools', 'Tools ▾', document.getElementById('btnWipe'));
 
-  function ensureSection_(panel, key, label){
-    let sec = panel.querySelector(`.topbar-menu__section[data-section-key="${key}"]`);
-    if(!sec){
-      sec = document.createElement('div');
-      sec.className = 'topbar-menu__section';
-      sec.dataset.sectionKey = key;
-      sec.textContent = label;
-      panel.appendChild(sec);
-    }
-    return sec;
+  function ensureSection_(menuInst, key, label){
+    if(!menuInst || typeof menuInst.ensureSection !== 'function') return null;
+    return menuInst.ensureSection(key, label, 'topbar-menu__section');
   }
 
-  ensureSection_(exportMenu.panel, 'exports', 'Exports');
-  ensureSection_(toolsMenu.panel, 'tools', 'Topbar Tools');
+  ensureSection_(exportMenu, 'exports', 'Exports');
+  ensureSection_(toolsMenu, 'tools', 'Topbar Tools');
 
   function upsertProxy_(menuPanel, targetEl, opts){
     if(!menuPanel || !targetEl) return;
@@ -136,7 +102,7 @@ function initTopbarDeclutter_(){
     if(!proxy){
       proxy = document.createElement('button');
       proxy.type = 'button';
-      proxy.className = 'btn btn--ghost topbar-menu__item';
+      proxy.className = 'btn btn--ghost pm-dropdown__item topbar-menu__item';
       proxy.dataset.topbarProxy = '1';
       proxy.dataset.proxyFor = targetId;
       proxy.addEventListener('click', () => {

@@ -1,6 +1,8 @@
 /* ---------------------------
    Milestones
 ---------------------------- */
+let moduleDetailsActionMenu_ = null;
+
 function wireMilestones() {
     ui.btnNewModule.addEventListener("click", async () => {
         const p = getActiveProject();
@@ -83,6 +85,8 @@ function wireMilestones() {
         renderAll();
     });
 
+    ensureModuleDetailsActionMenu_();
+
     ui.btnOpenMilestoneDetails?.addEventListener("click", openMilestoneDetailsModal);
     ui.btnCloseMilestoneDetails?.addEventListener("click", closeMilestoneDetailsModal);
     ui.milestoneDetailsModal?.addEventListener("click", (e) => {
@@ -139,11 +143,44 @@ function wireMilestones() {
     });
 }
 
+function ensureModuleDetailsActionMenu_(){
+    if(moduleDetailsActionMenu_?.root?.isConnected) return moduleDetailsActionMenu_;
+    const mount = document.getElementById('moduleDetailsHeaderMenuMount');
+    if(!mount || typeof pmDropdownCreate_ !== 'function') return null;
+
+    const existingRoot = mount.querySelector('.pm-dropdown');
+    if(existingRoot?._pmDropdownInstance){
+        moduleDetailsActionMenu_ = existingRoot._pmDropdownInstance;
+        return moduleDetailsActionMenu_;
+    }
+
+    const deleteBtn = ui.btnDeleteModule;
+    if(!deleteBtn) return null;
+
+    const menu = pmDropdownCreate_({
+        mount,
+        triggerLabel: 'Actions ▾',
+        panelMinWidth: 220,
+        rootClassName: 'pm-module-modal__actionsMenu',
+        triggerClassName: 'pm-module-modal__actionsMenuTrigger',
+        panelClassName: 'pm-module-modal__actionsMenuPanel'
+    });
+    menu.ensureSection('module-actions', 'Module Actions');
+
+    deleteBtn.classList.add('pm-dropdown__item');
+    deleteBtn.setAttribute('role', 'menuitem');
+    menu.panel.appendChild(deleteBtn);
+
+    moduleDetailsActionMenu_ = menu;
+    return menu;
+}
+
 function handleMilestoneModalKeydown_(e){
     if(e.defaultPrevented) return;
     if(String(e.key || "") !== "Escape") return;
 
     if(ui.moduleDetailsModal?.classList.contains("is-open")){
+        if(moduleDetailsActionMenu_?.isOpen?.()) return;
         closeModuleDetailsModal();
         return;
     }
@@ -160,6 +197,7 @@ function openModuleDetailsModal(){
         return;
     }
 
+    ensureModuleDetailsActionMenu_();
     ui.moduleDetailsModal?.classList.add("is-open");
     document.body.classList.add("pm-module-modal-open");
     ui.moduleDetailsModal?.setAttribute("aria-hidden", "false");
@@ -175,6 +213,7 @@ function openModuleDetailsModal(){
 }
 
 function closeModuleDetailsModal({ restoreFocus = true } = {}){
+    moduleDetailsActionMenu_?.close?.();
     ui.moduleDetailsModal?.classList.remove("is-open");
     document.body.classList.remove("pm-module-modal-open");
     ui.moduleDetailsModal?.setAttribute("aria-hidden", "true");

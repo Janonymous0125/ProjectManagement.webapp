@@ -1,0 +1,15 @@
+{
+  "name": "stark-project-management-blackboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stark PM plus a networked multi-agent blackboard and wake bridge.",
+  "scripts": {
+    "start": "node blackboard/server.js",
+    "blackboard": "node blackboard/server.js",
+    "bridge": "node blackboard/agent-bridge.js",
+    "test": "node --test blackboard/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

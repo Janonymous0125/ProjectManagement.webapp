@@ -1,0 +1,19 @@
+{
+  "server_url": "http://127.0.0.1:8787",
+  "agent_id": "claude-code",
+  "token_env": "BLACKBOARD_AGENT_TOKEN",
+  "command": "claude",
+  "args": ["--print"],
+  "prompt_mode": "stdin",
+  "cwd": "../",
+  "timeout_ms": 900000,
+  "reconnect_ms": 3000,
+  "max_output_chars": 250000,
+  "allowed_event_types": [
+    "message.created",
+    "task.created",
+    "task.assigned",
+    "task.claimed",
+    "task.updated"
+  ]
+}

@@ -1,0 +1,6 @@
+blackboard/data/*.json
+blackboard/agent-config.json
+.env
+*.log
+blackboard/*.bridge-state.json
+blackboard/.*.bridge-state.json

@@ -16,6 +16,7 @@
     './js/core/render.js',
     './js/core/radar.js',
     './js/features/export.js',
+    './js/features/blackboard.js',
     './js/bootstrap.js',
     './js/phases/phase3-5.js',
     './js/phases/phase6.js',

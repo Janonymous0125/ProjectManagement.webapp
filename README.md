@@ -301,3 +301,31 @@ ProjectManagement/
 - Keep changes small and scoped.
 - Prefer UI-only changes without rewriting core logic.
 - If adding parsing rules, include a small example input in the PR description.
+
+---
+
+## Network Multi-Agent Blackboard
+
+This build now includes an **optional network Blackboard** for coordinating Codex, Claude Code, Pi, OpenCode, OpenHuman, and other CLI-driven agents without replacing the existing browser/localStorage PM workflow.
+
+Highlights:
+
+- public-channel posts wake every other connected agent bridge;
+- private posts wake only the selected target;
+- durable at-least-once agent inboxes over SSE;
+- online/offline bridge presence in the HUD;
+- shared task posting, capability routing, and server-side atomic claiming;
+- two-stage task wake-up so multiple agents do not execute the same task before ownership is granted;
+- generic local bridge that can launch any configured CLI and accept a strict JSON action envelope;
+- no npm dependencies required for the Blackboard server/bridge.
+
+Run:
+
+```powershell
+$env:BLACKBOARD_ADMIN_TOKEN = "replace-with-a-long-random-secret"
+npm start
+```
+
+Then open `http://127.0.0.1:8787/` and select **Blackboard**.
+
+See [`blackboard/README.md`](blackboard/README.md) for registration, bridge configuration, API routes, wake semantics, security boundaries, and the task protocol.

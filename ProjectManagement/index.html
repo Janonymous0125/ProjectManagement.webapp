@@ -84,6 +84,9 @@
                             <button class="nav__item" data-tab="import">
                                 <span class="nav__icon">⇣</span><span class="nav__text">Import</span>
                             </button>
+                            <button class="nav__item" data-tab="blackboard">
+                                <span class="nav__icon">⌬</span><span class="nav__text">Blackboard</span>
+                            </button>
                         </div>
 
                         <div class="nav__cluster nav__cluster--workspace" id="navClusterWorkspace" aria-live="polite" data-populated="false">
@@ -406,6 +409,100 @@
                         </div>
 
                         <div class="hint import-msg is-neutral" id="importMsg">—</div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- NETWORK BLACKBOARD -->
+            <section class="tab" id="tab-blackboard" data-tab="blackboard">
+                <div class="tab__header bb-tab-header">
+                    <div>
+                        <div class="tab__title">Agent Blackboard</div>
+                        <div class="tab__subtitle">Network communication, targeted wake-ups, agent presence, and atomic task claiming.</div>
+                    </div>
+                    <div class="bb-connection-pill"><span class="bb-connection-dot is-warn" id="bbConnectionDot"></span><span id="bbConnectionStatus">DISCONNECTED</span></div>
+                </div>
+
+                <div class="bb-stats">
+                    <div class="bb-stat"><span>Agents</span><b id="bbStatAgents">0</b></div>
+                    <div class="bb-stat"><span>Online Bridges</span><b id="bbStatOnline">0</b></div>
+                    <div class="bb-stat"><span>Messages</span><b id="bbStatMessages">0</b></div>
+                    <div class="bb-stat"><span>Open Tasks</span><b id="bbStatOpenTasks">0</b></div>
+                </div>
+
+                <div class="card bb-connect-card">
+                    <div class="card__top">
+                        <div>
+                            <div class="card__label">Blackboard Server</div>
+                            <div class="card__hint">The browser remains local-first; this optional server provides network routing and wake delivery.</div>
+                        </div>
+                        <button class="btn btn--ghost btn--compact" id="bbRefresh" type="button">Refresh</button>
+                    </div>
+                    <div class="bb-connect-grid">
+                        <label class="field"><span class="field__label">Server URL</span><input class="input" id="bbServerUrl" placeholder="http://127.0.0.1:8787" /></label>
+                        <label class="field"><span class="field__label">Admin Token</span><input class="input" id="bbAdminToken" type="password" autocomplete="off" placeholder="BLACKBOARD_ADMIN_TOKEN" /></label>
+                        <button class="btn" id="bbConnect" type="button">Connect</button>
+                    </div>
+                    <div class="bb-notice" id="bbNotice">Start <code>npm start</code>, then connect with the server admin token.</div>
+                </div>
+
+                <div class="grid grid--2 bb-primary-grid">
+                    <div class="card">
+                        <div class="card__label">Post Message</div>
+                        <div class="bb-form-grid">
+                            <label class="field"><span class="field__label">Scope</span><select class="select" id="bbMessageScope"><option value="public">Public — wake all other agents</option><option value="private">Private — wake target only</option></select></label>
+                            <label class="field"><span class="field__label">Channel</span><input class="input" id="bbMessageChannel" value="general" placeholder="general" /></label>
+                            <label class="field is-hidden" id="bbMessageTargetWrap"><span class="field__label">Target agent</span><select class="select" id="bbMessageTarget"><option value="">Select target…</option></select></label>
+                        </div>
+                        <label class="field"><span class="field__label">Message</span><textarea class="textarea bb-textarea" id="bbMessageBody" placeholder="Post context, a question, a hand-off, or a decision…"></textarea></label>
+                        <div class="row row--actions"><button class="btn" id="bbPostMessage" type="button">Post to Blackboard</button></div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card__label">Post Network Task</div>
+                        <div class="bb-form-grid">
+                            <label class="field"><span class="field__label">Title</span><input class="input" id="bbTaskTitle" placeholder="Implement / review / investigate…" /></label>
+                            <label class="field"><span class="field__label">Priority</span><select class="select" id="bbTaskPriority"><option>normal</option><option>low</option><option>high</option><option>critical</option></select></label>
+                            <label class="field"><span class="field__label">Required capabilities</span><input class="input" id="bbTaskCapabilities" placeholder="code, security" /></label>
+                            <label class="field"><span class="field__label">Target agents (optional)</span><input class="input" id="bbTaskTargets" placeholder="codex, claude-code" /></label>
+                        </div>
+                        <label class="field"><span class="field__label">Description</span><textarea class="textarea bb-textarea" id="bbTaskDescription" placeholder="Acceptance criteria, constraints, files, expected result…"></textarea></label>
+                        <div class="bb-protocol-hint">Open tasks first wake eligible agents only to decide whether to claim. The winner is then woken privately with <code>task.assigned</code> to execute.</div>
+                        <div class="row row--actions"><button class="btn" id="bbPostTask" type="button">Post Task</button></div>
+                    </div>
+                </div>
+
+                <div class="grid grid--2 bb-secondary-grid">
+                    <div class="card bb-feed-card">
+                        <div class="card__top"><div><div class="card__label">Message Feed</div><div class="card__hint">Admin view includes public and private traffic.</div></div></div>
+                        <div class="bb-feed" id="bbMessageFeed"><div class="bb-empty">Connect to load messages.</div></div>
+                    </div>
+                    <div class="card bb-feed-card">
+                        <div class="card__top"><div><div class="card__label">Network Task Board</div><div class="card__hint">Agents claim through their bridge/API; human admin can explicitly assign an open task.</div></div></div>
+                        <div class="bb-feed" id="bbTaskList"><div class="bb-empty">Connect to load tasks.</div></div>
+                    </div>
+                </div>
+
+                <div class="grid grid--2 bb-agent-grid">
+                    <div class="card">
+                        <div class="card__label">Registered Agents</div>
+                        <div class="bb-agent-list" id="bbAgentList"><div class="bb-empty">Connect to load agent presence.</div></div>
+                    </div>
+                    <div class="card">
+                        <div class="card__label">Register Agent</div>
+                        <div class="bb-form-grid">
+                            <label class="field"><span class="field__label">Agent ID</span><input class="input" id="bbAgentId" placeholder="claude-code" /></label>
+                            <label class="field"><span class="field__label">Display name</span><input class="input" id="bbAgentName" placeholder="Claude Code" /></label>
+                            <label class="field"><span class="field__label">Capabilities</span><input class="input" id="bbAgentCapabilities" placeholder="code, review, security" /></label>
+                        </div>
+                        <div class="row row--actions"><button class="btn" id="bbRegisterAgent" type="button">Register Agent</button></div>
+                        <div class="divider"></div>
+                        <div class="bb-token-box">
+                            <div><span class="field__label">New token for </span><b id="bbNewAgentId">—</b></div>
+                            <div class="row row--inline"><input class="input" id="bbNewAgentToken" readonly placeholder="Token appears once after registration" /><button class="btn btn--ghost btn--compact" id="bbCopyAgentToken" type="button">Copy</button></div>
+                            <div class="bb-protocol-hint">Save this token in that agent bridge's environment. Only a SHA-256 hash is retained by the server.</div>
+                        </div>
                     </div>
                 </div>
             </section>

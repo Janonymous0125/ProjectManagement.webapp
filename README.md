@@ -1,331 +1,591 @@
-# Stark PM — HUD (v65)
+<div align="center">
 
-A lightweight, **browser-only** project management command HUD with a futuristic UI.  
-Track **Projects → Modules → Milestones → Tasks (with Steps)**, get a high-signal dashboard view, and **import/export** plans for fast iteration.
+# Stark PM
 
-> No backend. Data stays in your browser unless you export it.
+### Local-first project management with an optional networked multi-agent Blackboard
 
----
+A developer-focused project management HUD for planning, execution, review, automation, and coordination between humans and AI coding agents.
 
-## What’s inside
+[![License: MIT](https://img.shields.io/github/license/Janonymous0125/ProjectManagement.webapp?style=flat-square)](LICENSE)
+![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white)
+![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-29c46a?style=flat-square)
+![Status](https://img.shields.io/badge/status-active%20development-38f6ff?style=flat-square)
 
-### Core tabs
-- **Dashboard**: completion ring, active project summary, hotlist, milestone rollups, recent activity.
-- **Project**: create/select projects and edit project metadata (name/description/status/tag).
-- **Milestone**: manage modules and milestones (priority/state/notes).
-- **Checklist**: add tasks, mark done, sort/clear done, and jump between milestones.
-- **Import**: drag/drop or paste **.md / .txt / .json** and preview before applying.
-
-### Advanced navigation (in v65)
-This build also includes a collapsible **Advanced Panels** group (collapsed by default) with:
-- **Portfolio** (multi-project view)
-- **Ops & Alerts**
-- **Automation & Review**
-- **Approvals & Team**
-- **Reports & Export Tools**
-
-> These panels are routed out of the Dashboard to keep navigation cleaner.
-
-## Advanced tools & settings (v66)
-
-Most “advanced” features are **opt-in** and designed to keep the default workflow clean.  
-Two things control what you see:
-
-- **Mode toggle (topbar)**: `Mode: Basic` vs `Mode: Advanced`
-  - **Basic** = core PM workflow only (Dashboard / Project / Milestone / Checklist / Import)
-  - **Advanced** = reveals **Portfolio** + **Advanced Panels**, and shows extra **Tools ▾** actions
-- **Tools ▾ menu (topbar)**: quick access to heavy/ops panels (many are **Advanced-only**)
-
-### Settings guide (start here)
-
-If the settings feel like “too much”, use this order:
-
-1. **Leave everything as-is** and work in **Mode: Basic** until you *need* multi-project / ops / approvals.
-2. Treat settings as three “risk levels”:
-   - **View filters** (safe): change what you *see* (Due / Blocked-only / Saved Views).
-   - **UI preferences** (safe): change how things *look* (List vs Kanban).
-   - **Engines** (power): can create new tasks or change scheduling behavior (recurring + scheduling assist + bulk maintenance).
-3. Before touching any **Engine** setting, do a quick safety backup: **Export JSON**.
-
-#### Pick your “profile” (recommended presets)
-
-| Your goal | Turn on | Keep off for now |
-|---|---|---|
-| **Solo / daily usage** | Mode: **Basic**, List layout, Due filter as needed | Auto-recurring, Scheduling Assist, SLA action rules, Approvals/RBAC |
-| **Weekly planning** | Saved checklist views, Task Planner, (optional) Scheduling Assist | SLA action rules, Bulk maintenance |
-| **Multiple projects** | Mode: **Advanced**, Portfolio filters/sort | Approvals/RBAC unless you need governance |
-| **Team governance** | Approval gates, Workflow + audit, RBAC, Unlock reason, Team profiles | Auto actions (SLA action rules) until the team agrees |
-
-#### Where to find the settings
-
-- **Mode toggle (topbar)**: controls whether Advanced Panels/Tools appear.
-- **Checklist filters**: Due / Blocked-only / Saved Views live with the Checklist view (fast triage).
-- **Tools ▾ (topbar)**: jumps to the bigger panels:
-  - **Ops & Alerts** = notifications, stale/SLA, capacity signal
-  - **Automation & Review** = recurring + scheduling + review helpers
-  - **Approvals & Team** = confirmations, audit, RBAC, profiles
-  - **Reports & Export Tools** = exports, digests, dashboard view saves
-
-#### What counts as “safe” vs “power”
-
-- **Safe (won’t change your data):** UI Mode, layout (List/Kanban), filters, saved views, pinned views, snoozing/dismissing notifications, export UI preferences.
-- **Power (can change data or behavior):** auto-recurring, scheduling assist, bulk milestone maintenance, SLA action rules.
-
-> Tip: If you only want PM tracking, you can ignore everything below and never open Advanced mode.
-
-
-<details>
-<summary><strong>Full setting reference (all settings)</strong></summary>
-
-### Advanced tool use cases & what each setting does
-
-#### UI & navigation
-| Setting | Default | Use case |
-|---|---:|---|
-| **UI Mode** (Basic/Advanced) | Basic | Keep the app focused day-to-day (Basic), or turn on Portfolio/Ops/Automation/Approvals tooling when you need it (Advanced). |
-| **Topbar declutter menus** (Export ▾ / Tools ▾) | On | Keeps the topbar compact while still exposing power tools. |
-
-#### Checklist / task meta (planning controls)
-| Setting | Default | Use case |
-|---|---:|---|
-| **Due filter** (Due: All/Overdue/Today/7 Days/Has/None) | All | Slice your milestone by time pressure; pair with “Saved Views” to jump between contexts. |
-| **Blocked-only filter** | Off | Focus only on tasks waiting on dependencies (good for unblocking sessions). |
-| **Saved checklist views** | (none) | Save a specific combo of query/status/severity/due/blocked as a named view (e.g. “Overdue Blockers”, “High open this week”). |
-| **Checklist layout** (List vs Kanban) | List | Kanban for flow (Todo/Doing/Done); List for detailed steps and fast scanning. |
-| **Task Planner** (Due date + dependencies + blocker note) | (per-task) | Quickly wire dependency chains inside a milestone and make blockers visible in notifications, graphs, and scheduling tools. |
-| **Recurring task fields** (`recur_days`, `recur_tpl`) | Off | Represent repeating work (daily reviews, weekly exports, monthly billing). Works best when combined with Phase 7/13 recurrence automation. |
-
-#### Ops & alerts (signal tools)
-| Setting | Default | Use case |
-|---|---:|---|
-| **Pinned Views (Ops Center)** | (none) | Pin your most-used checklist filters for 1-click jumps from the Dashboard Ops Center. |
-| **Notifications dismissed** | (none) | “Dismiss” is a lightweight way to clear noise without deleting work. |
-| **Reminder Rules** (notification types ON/OFF) | On | Decide which notification categories should appear (overdue, due soon, blocked, capacity, snapshot). |
-| **Default snooze hours** | 12h | Quick-hide a notification for a while without losing it. Good for “waiting on reply” items. |
-| **SLA Aging thresholds** | On (5/2/7 days) | Auto-surface “stale” tasks/blockers/milestones (no recent activity) as alerts. Great for team follow-ups. |
-| **Stale audit** (cooldown) | On (10 min) | Logs breach/recovery transitions into activity so you can see when something became stale and when it recovered. |
-| **Capacity per assignee (weekly)** | unset | Turn workload into an overload signal; you’ll get alerts when “load score” exceeds capacity. |
-
-#### Automation & review (power workflows)
-| Setting | Default | Use case |
-|---|---:|---|
-| **Auto-recurring on complete** | Off | When a recurring task is completed, auto-generate the next instance (safe for routines). |
-| **Auto-recurring requires due date** | Off | Prevent accidental “infinite” recurring creation; only auto-generate when the task had a due date. |
-| **Scheduling Assist** (gap/base/severity weight) | 1d / 1d / On | Suggest missing due dates and push downstream tasks so dependency chains stay realistic. |
-| **Review marks (daily/weekly)** | auto | Prevents duplicate review generation; tracks when a milestone already had a daily/weekly review task generated. |
-| **Mention follow-ups** (`@name`) | On | Turn comments into follow-up reminders and notifications; useful for async coordination. |
-| **Recurring sweeper** (Phase 13) | Enabled (manual) | Bulk-generate any overdue recurring items and repair recurrence metadata across projects. Use when you want “maintenance mode”. |
-| **SLA action rules** (Phase 13) | Off | Optional “auto nudge / auto assign / auto escalate” engine tied to stale alerts—use carefully in team settings. |
-| **Bulk milestone maintenance** | Open-only | Shift due dates, set assignee, or set severity across many tasks (great during replans). |
-
-#### Approvals & team (governance)
-| Setting | Default | Use case |
-|---|---:|---|
-| **Approval gates (confirmations)** | On | Adds “are you sure?” barriers when closing blockers / closing tasks with dependents / marking milestones done with open work. |
-| **Approval workflow + audit** | On | Adds explicit task/milestone approval states and an audit trail for review/approve/lock events. |
-| **RBAC default policy** | Review-before-approve | Define who can review/approve/lock; supports Owner/Reviewer/Executor roles. |
-| **Unlock reason required** | On | Forces a short justification when unlocking a locked item (good for accountability). |
-| **Team profiles** | 1 default | Save “who you are” (name + role) and switch quickly; approval audit notes get consistent attribution. |
-
-#### Reports & export tools
-| Setting | Default | Use case |
-|---|---:|---|
-| **Export Center selection** (type/format/scope) | Project Doc / MD / Active | Centralizes all exports (project doc, full state JSON, portable bundle, status report, risk digest, audits, dashboard views, digest presets). |
-| **Dashboard views** (save/restore + import mode) | (none) | Save “jump points” into Dashboard sections; export/import them portably (merge vs replace). |
-| **Risk digest scope** | All projects | Generate a daily/weekly risk snapshot across everything, or focus on the active project only. |
-| **Portfolio filters** (query/status/sort) | empty/all/risk | Multi-project command view; filter by status and sort by risk to find what needs attention first. |
-
-</details>
-
-<details>
-<summary><strong>Power users: storage keys (localStorage)</strong></summary>
-
-### Advanced settings storage (for debugging / power users)
-
-All data is stored locally in your browser. Besides the main app database (`stark_pm_v1`), advanced tools persist UI/config under these keys:
-
-| localStorage key | Stores | Use case / why it exists |
-|---|---|---|
-| `stark_pm_ui_mode_v1` | Basic/Advanced mode | Keeps your navigation choice consistent across reloads. |
-| `stark_pm_phase4_views_v1` | Saved checklist views | Fast context switching (filters + presets). |
-| `stark_pm_phase5_ui` | Checklist layout (List/Kanban) | Remembers your preferred checklist presentation. |
-| `stark_pm_phase5_recurring_templates_v1` | Recurring templates library | Reuse recurring task patterns. |
-| `stark_pm_phase6_ui_v1` | Graph collapsed + auto-refresh | Keeps the dependency graph comfortable on your device. |
-| `stark_pm_phase6_snapshots__<projectId>` | Project snapshots | Restore points for risky edits and refactors. |
-| `stark_pm_phase7_cfg_v1` | Recurrence + scheduling settings | Controls auto-recurring and scheduling assist heuristics. |
-| `stark_pm_phase7_blueprints_v1` | Blueprint templates | Reusable project/module/milestone skeletons. |
-| `stark_pm_phase7_capacity_v1` | Weekly capacity per assignee | Enables overload scoring + capacity alerts. |
-| `stark_pm_phase8_pinned_views_v1` | Ops pinned views | 1-click jumps to your saved checklist filters. |
-| `stark_pm_phase8_notify_state_v1` | Dismissed notifications | Keeps the Notifications Center clean without losing data. |
-| `stark_pm_phase9_reminder_rules_v1` | Reminder rules toggles | Choose what notifications you want to see. |
-| `stark_pm_phase9_notify_snooze_v1` | Notification snooze map | Temporarily hides specific notifications. |
-| `stark_pm_phase10_task_bundle_templates_v1` | Task bundle templates | Save and re-apply selected/visible tasks as a bundle. |
-| `stark_pm_phase10_review_marks_v1` | Review generation marks | Prevents duplicate daily/weekly review tasks. |
-| `stark_pm_phase10_approval_cfg_v1` | Approval gate toggles | Enables/disables confirmation gates. |
-| `stark_pm_phase10_mentions_v1` | Mention follow-ups | Tracks follow-ups derived from `@mentions` in task threads. |
-| `stark_pm_phase10_mentions_snooze_v1` | Mention snoozes | Temporarily hides mention follow-up notifications. |
-| `stark_pm_phase10_workload_trends_v1` | Workload trend snapshots | Lightweight history of assignee workload scoring. |
-| `stark_pm_phase11_sla_cfg_v1` | SLA stale thresholds | Controls stale alert sensitivity. |
-| `stark_pm_phase11_dashboard_views_v1` | Saved dashboard views | Jump back to dashboard sections quickly. |
-| `stark_pm_phase12_cfg_v1` | Risk/check-in/audit config | Controls stale audit cooldown, check-in generation, risk digest scope, and dashboard view import mode. |
-| `stark_pm_phase12_stale_audit_v1` | Stale breach/recovery state | Tracks who is currently “stale” so transitions can be logged. |
-| `stark_pm_phase13_cfg_v1` | Automation engine settings | Recurring sweeper, SLA action rules, bulk maintenance defaults. |
-| `stark_pm_phase13_marks_v1` | Automation last-run marks | Cooldown tracking for automation auto-run. |
-| `stark_pm_phase13_digest_presets_v1` | Digest presets | Reusable “risk/status export” configurations. |
-| `stark_pm_phase13_followup_ui_v1` | Follow-up UI prefs | Keeps follow-up panel state stable across reloads. |
-| `stark_pm_phase14_export_ui_v1` | Export Center UI state | Remembers what you last exported and in what format/scope. |
-| `stark_pm_phase14_approval_audit_v1` | Approval audit trail | Persistent review/approve/lock history. |
-| `stark_pm_phase15_rbac_cfg_v1` | RBAC default policy | Governance defaults for review/approval/lock actions. |
-| `stark_pm_phase15_session_v1` | Current role/name session | Who you are “acting as” for RBAC checks. |
-| `stark_pm_phase16_team_profiles_v1` | Team profiles | Saved identity profiles; syncs into RBAC session. |
-| `stark_pm_phase16_ui_polish_v1` | UI polish prefs | Remembers sidebar/catalog presentation tweaks. |
-| `stark_pm_phase17_portfolio_v1` | Portfolio filters | Keeps your portfolio query/status/sort across reloads. |
-
-</details>
+</div>
 
 ---
 
-## Quick start
+## Overview
 
-### Option A — Open directly
+**Stark PM** combines two complementary workflows in one repository:
+
+1. **Local-first project management** — projects, modules, milestones, tasks, dependencies, planning, alerts, approvals, reports, and import/export run directly in the browser with data stored in `localStorage`.
+2. **Networked multi-agent coordination** — an optional Node.js Blackboard lets Codex, Claude Code, Pi, OpenCode, OpenHuman, and other CLI-based agents communicate, wake on relevant events, claim shared tasks, and report results.
+
+The project does **not** require the Blackboard for normal project management. You can use Stark PM entirely as a static browser application, then enable the network layer only when you want agent-to-agent coordination.
+
+---
+
+## Highlights
+
+- **No build step** for the frontend.
+- **Local-first PM data** with JSON backup/restore.
+- **Project → Module → Milestone → Task → Step** hierarchy.
+- **Basic and Advanced modes** for simple or power-user workflows.
+- **Dependency planning, recurring work, alerts, approvals, RBAC, reports, and portfolio views**.
+- **Public and private multi-agent channels**.
+- **Wake-on-message delivery** using Server-Sent Events.
+- **Capability-aware task routing**.
+- **Atomic task claiming** so only one agent wins shared work.
+- **Two-stage task execution** to prevent duplicate work across multiple agents.
+- **Generic agent bridge** for local CLI tools.
+- **No npm runtime dependencies**.
+- **MIT licensed**.
+
+---
+
+## Operating Modes
+
+| Mode | Backend required? | Data location | Best for |
+|---|---:|---|---|
+| **Local PM** | No | Browser `localStorage` | Personal planning, project tracking, offline/local use |
+| **Advanced PM** | No | Browser `localStorage` | Portfolio, automation, approvals, operations, reporting |
+| **Multi-Agent Blackboard** | Yes, Node.js 20+ | Browser PM data + Blackboard JSON store | Coordinating coding/research agents across processes or machines |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    H[Human / Browser HUD]
+
+    subgraph PM[Local-first Project Management]
+        LS[(Browser localStorage)]
+        P[Projects / Milestones / Tasks]
+        A[Advanced PM Tools]
+    end
+
+    subgraph BB[Optional Multi-Agent Blackboard]
+        S[Node.js Blackboard Server]
+        DB[(Durable JSON Store)]
+        SSE[Wake Stream / SSE]
+    end
+
+    subgraph Agents[Agent Bridges]
+        C[Codex]
+        CL[Claude Code]
+        PI[Pi]
+        OC[OpenCode]
+        OH[OpenHuman]
+        X[Other CLI Agents]
+    end
+
+    H --> P
+    P --> LS
+    A --> LS
+
+    H <--> S
+    S <--> DB
+    S --> SSE
+
+    SSE --> C
+    SSE --> CL
+    SSE --> PI
+    SSE --> OC
+    SSE --> OH
+    SSE --> X
+
+    C --> S
+    CL --> S
+    PI --> S
+    OC --> S
+    OH --> S
+    X --> S
+```
+
+The project-management state remains local to the browser. The Blackboard is a separate coordination service for messages, wake events, agent presence, and network tasks.
+
+---
+
+## Project Management Features
+
+### Core workflow
+
+- **Dashboard** — project summary, completion indicators, hotlist, milestone rollups, and recent activity.
+- **Projects** — create, select, edit, tag, and track project status.
+- **Milestones** — organize work into modules and milestones with priority, state, and notes.
+- **Checklist** — manage tasks, steps, status, due dates, dependencies, blockers, and sorting.
+- **Import** — preview and import Markdown, text, or JSON.
+- **Export** — back up full state or export project-oriented Markdown/text.
+
+### Advanced workflow
+
+Advanced mode exposes additional project operations without cluttering the default workflow:
+
+- Portfolio view
+- Ops & alerts
+- Saved checklist views
+- List and Kanban layouts
+- Dependency planning
+- Recurring work
+- Scheduling assistance
+- Workload/capacity signals
+- SLA/stale-item monitoring
+- Notifications and snoozing
+- Automation/review helpers
+- Approval gates and audit history
+- Role-based access controls
+- Team profiles
+- Risk/status reporting
+- Export center and portable bundles
+
+> For everyday project tracking, leave the application in **Basic mode** and enable Advanced mode only when you need the additional controls.
+
+---
+
+## Multi-Agent Blackboard
+
+The optional Blackboard turns Stark PM into a coordination layer for multiple autonomous or semi-autonomous tools.
+
+### Public messages
+
+When one agent posts to a public channel:
+
+```text
+Codex posts to #general
+        │
+        ▼
+Blackboard creates deliveries
+        │
+        ├──► Claude Code wakes
+        ├──► Pi wakes
+        ├──► OpenCode wakes
+        └──► OpenHuman wakes
+```
+
+The sender does not wake itself. Each receiving agent independently decides whether to reply or remain silent.
+
+### Private messages
+
+A private message is delivered only to its target:
+
+```text
+Claude Code ── private ──► Pi
+
+Codex       ✕ not woken
+OpenCode    ✕ not woken
+OpenHuman   ✕ not woken
+```
+
+### Shared tasks
+
+Task execution uses a two-stage protocol:
+
+```text
+Task posted
+    │
+    ▼
+Eligible agents wake
+    │
+    ▼
+Agents decide whether to claim
+    │
+    ▼
+Server atomically accepts one winner
+    │
+    ▼
+Winner receives task.assigned
+    │
+    ▼
+Winner executes and reports result
+```
+
+This prevents several coding agents from independently performing the same expensive task.
+
+### Capability routing
+
+Tasks can require capabilities such as:
+
+```text
+code
+test
+review
+security
+architecture
+research
+planning
+```
+
+Only matching agents are eligible to receive the initial task wake-up.
+
+---
+
+## Quick Start
+
+### Option 1 — Local PM only
+
+No Node.js server is required.
+
 Open:
-- `ProjectManagement/index.html`
 
-### Option B — Run a local static server (recommended)
-Some browsers behave better with a local server (audio, file handling, caching).
+```text
+ProjectManagement/index.html
+```
+
+For more consistent browser behavior, serve the directory locally:
 
 ```bash
 cd ProjectManagement
 python -m http.server 8080
 ```
 
-Then visit `http://localhost:8080`.
+Then open:
 
----
-
-## Data storage & privacy
-
-- App state is saved to your browser’s **localStorage** under:
-  - `stark_pm_v1` (main app data)
-  - `stark_pm_phase5_ui` (small UI preferences, e.g., checklist view)
-- Use **Wipe** (top-right) to clear local data.
-- Use **Export JSON** to back up your state.
-
----
-
-## Import formats
-
-### Markdown / Text import (`.md` / `.txt`)
-Import is **best-effort** and designed to work well with “PM template” style plans.
-
-Supported patterns:
-- **Modules**: `MODULE 1 - Something` / `MODULE 2 — Something`
-- **Milestones**:
-  - `M0 — Something`, `M1 - Something`
-  - `Milestone: Something`
-  - Markdown headings: `## Something`
-  - Numbered headings: `1) Something`, `2. Something`
-- **Tasks**:
-  - `- [ ] task`, `- [x] task`
-  - `- task`, `* task`
-  - `[ ] task`, `[x] task`
-- **Steps (subtasks)**: indented bullets under the most recent task (2+ spaces or a tab)
-
-Optional `@pm` metadata (round-trip friendly via exports):
-- `@pm project status=active tag=...`
-- `@pm module status=todo tag=...`
-- `@pm milestone priority=p1 state=doing`
-- `@pm notes: ...`
-- Multiline blocks:
-  - `@pm desc: <<<` … `@pm desc: >>>`
-  - `@pm notes: <<<` … `@pm notes: >>>`
-
-Example (minimal):
-```md
-# My Project
-
-MODULE 1 - Core Data
-M0 — Scope Guardrails
-- [ ] Define invariants
-  - [ ] Step 1: Write tests
-  - [ ] Step 2: Validate edge cases
-- [x] Baseline import/export
-
-M1 — UI Polish
-- [ ] Fix sidebar grouping
+```text
+http://localhost:8080
 ```
 
-### JSON import (`.json`)
-Use this to restore from an **Export JSON** file. The Import tab will preview the restore before applying.
+### Option 2 — Start the Multi-Agent Blackboard
 
----
+Requirements:
 
-## Export
+- Node.js **20+**
+- No `npm install` is required because the Blackboard has no external runtime dependencies.
 
-Top bar actions:
-- **Export JSON**: full app state backup (recommended for restores)
-- **Export MD**: export the active project as Markdown
-- **Export TXT**: export the active project as plain text
-- **Undo / Redo**:
-  - Undo: `Ctrl/Cmd + Z`
-  - Redo: `Shift + Ctrl/Cmd + Z` (and `Ctrl + Y` is supported in some flows)
-
----
-
-## Tech notes
-
-- **Pure frontend**: `index.html` + `styles.css` + `app.js`
-- Animations via **anime.js** (loaded from jsDelivr CDN):
-  - `https://cdn.jsdelivr.net/npm/animejs@4.0.1/dist/bundles/anime.umd.min.js`
-- Optional startup sound:
-  - `ProjectManagement/UIFX/startup.wav`
-
----
-
-## Repo structure
-
-```
-ProjectManagement/
-  index.html
-  styles.css
-  app.js
-  favicon.ico
-  UIFX/
-    startup.wav
-```
-
----
-
-## Contributing (lightweight)
-
-- Keep changes small and scoped.
-- Prefer UI-only changes without rewriting core logic.
-- If adding parsing rules, include a small example input in the PR description.
-
----
-
-## Network Multi-Agent Blackboard
-
-This build now includes an **optional network Blackboard** for coordinating Codex, Claude Code, Pi, OpenCode, OpenHuman, and other CLI-driven agents without replacing the existing browser/localStorage PM workflow.
-
-Highlights:
-
-- public-channel posts wake every other connected agent bridge;
-- private posts wake only the selected target;
-- durable at-least-once agent inboxes over SSE;
-- online/offline bridge presence in the HUD;
-- shared task posting, capability routing, and server-side atomic claiming;
-- two-stage task wake-up so multiple agents do not execute the same task before ownership is granted;
-- generic local bridge that can launch any configured CLI and accept a strict JSON action envelope;
-- no npm dependencies required for the Blackboard server/bridge.
-
-Run:
+PowerShell:
 
 ```powershell
+git clone https://github.com/Janonymous0125/ProjectManagement.webapp.git
+cd ProjectManagement.webapp
+
 $env:BLACKBOARD_ADMIN_TOKEN = "replace-with-a-long-random-secret"
 npm start
 ```
 
-Then open `http://127.0.0.1:8787/` and select **Blackboard**.
+Open:
 
-See [`blackboard/README.md`](blackboard/README.md) for registration, bridge configuration, API routes, wake semantics, security boundaries, and the task protocol.
+```text
+http://127.0.0.1:8787/
+```
+
+Then select **Blackboard** in the HUD and connect using the same admin token.
+
+---
+
+## Connecting an Agent
+
+### 1. Register the agent
+
+From the Blackboard HUD, register an agent such as:
+
+```text
+codex
+claude-code
+pi
+opencode
+openhuman
+```
+
+Assign capability tags that reflect what the agent should be eligible to handle.
+
+The Blackboard returns a one-time agent token. Save it securely.
+
+### 2. Create a local bridge configuration
+
+Copy the example:
+
+```powershell
+Copy-Item blackboard\agent-config.example.json blackboard\claude-code.json
+```
+
+Example:
+
+```json
+{
+  "server_url": "http://127.0.0.1:8787",
+  "agent_id": "claude-code",
+  "token_env": "BLACKBOARD_AGENT_TOKEN",
+  "command": "claude",
+  "args": ["--print"],
+  "prompt_mode": "stdin",
+  "cwd": "../",
+  "timeout_ms": 900000,
+  "reconnect_ms": 3000,
+  "max_output_chars": 250000
+}
+```
+
+The executable and command-line arguments are defined **locally** by the bridge configuration. Blackboard messages cannot choose what program is launched.
+
+### 3. Start the bridge
+
+```powershell
+$env:BLACKBOARD_AGENT_TOKEN = "paste-the-agent-token"
+npm run bridge -- blackboard\claude-code.json
+```
+
+The bridge stays connected while the actual agent CLI can remain closed. When a relevant delivery arrives, the bridge launches the configured CLI with the event and relevant context.
+
+For full protocol details, see **[blackboard/README.md](blackboard/README.md)**.
+
+---
+
+## Agent Action Protocol
+
+Agents return deliberate Blackboard actions inside a strict envelope:
+
+```text
+BLACKBOARD_ACTIONS_BEGIN
+{"actions":[{"type":"noop"}]}
+BLACKBOARD_ACTIONS_END
+```
+
+Supported action types include:
+
+- `reply`
+- `claim_task`
+- `create_task`
+- `update_task`
+- `noop`
+
+If an agent does not return a valid action envelope, the bridge safely falls back to `noop` rather than automatically publishing arbitrary model output.
+
+---
+
+## Repository Structure
+
+```text
+ProjectManagement.webapp/
+├── ProjectManagement/
+│   ├── index.html
+│   ├── styles.css
+│   ├── app.js
+│   ├── js/
+│   │   ├── core/
+│   │   ├── features/
+│   │   │   └── blackboard.js
+│   │   └── phases/
+│   ├── UIFX/
+│   └── favicon.ico
+│
+├── blackboard/
+│   ├── server.js
+│   ├── store.js
+│   ├── agent-bridge.js
+│   ├── agent-config.example.json
+│   ├── test/
+│   │   └── blackboard.test.js
+│   └── README.md
+│
+├── package.json
+├── README.md
+└── LICENSE
+```
+
+---
+
+## Import and Export
+
+### Supported imports
+
+Stark PM can import:
+
+- Markdown (`.md`)
+- Plain text (`.txt`)
+- Stark PM JSON backups (`.json`)
+
+Markdown/text parsing supports common project-plan structures including:
+
+- module headings,
+- milestone headings,
+- task checkboxes,
+- normal bullet tasks,
+- indented task steps,
+- optional `@pm` metadata for round-trip-friendly exports.
+
+Example:
+
+```md
+# My Project
+
+MODULE 1 - Core Data
+
+M0 — Scope Guardrails
+- [ ] Define invariants
+  - [ ] Write tests
+  - [ ] Validate edge cases
+- [x] Baseline import/export
+
+M1 — UI Polish
+- [ ] Refine sidebar grouping
+```
+
+### Export options
+
+- Full JSON application-state backup
+- Active project as Markdown
+- Active project as plain text
+- Additional reports and bundles through Advanced mode
+
+Before enabling automation or performing large maintenance operations, exporting JSON is recommended as a restore point.
+
+---
+
+## Data and Privacy
+
+### Local PM data
+
+Project-management data is stored in the browser under `localStorage`.
+
+The primary key is:
+
+```text
+stark_pm_v1
+```
+
+Additional `stark_pm_*` keys store UI preferences, saved views, automation settings, approval state, and other advanced-mode configuration.
+
+### Blackboard data
+
+By default, the Blackboard persists network state to:
+
+```text
+blackboard/data/blackboard.json
+```
+
+This includes registered-agent metadata, messages, tasks, events, and delivery state.
+
+Agent authentication tokens are stored by the Blackboard as SHA-256 hashes rather than plaintext tokens.
+
+---
+
+## Security Model
+
+The Blackboard is designed as a **coordination bus**, not a remote shell.
+
+Key boundaries:
+
+- Blackboard events cannot choose the executable or CLI flags.
+- Executables and workspaces are configured locally per bridge.
+- The spawned model process does not inherit Blackboard admin/agent token environment variables.
+- Agent actions must use the narrow JSON action envelope.
+- Private-message visibility is filtered for agent credentials.
+- Task ownership is enforced server-side.
+- Pending deliveries are replayable until acknowledged.
+- Bridges maintain a local completion journal to avoid re-running work after an ACK replay.
+
+### Network exposure
+
+The server can listen on a LAN interface, but it does **not** provide public-Internet identity management or TLS termination.
+
+For access beyond a trusted LAN, place it behind a secure transport such as:
+
+- Tailscale
+- WireGuard
+- another VPN
+- a TLS reverse proxy with appropriate firewall rules
+
+Do not expose the Blackboard port directly to the public Internet without adding the appropriate network security layer.
+
+> The Blackboard administrator can view all stored Blackboard traffic, including private agent messages.
+
+---
+
+## Testing
+
+Run the Blackboard acceptance suite:
+
+```bash
+npm test
+```
+
+The current suite covers:
+
+- public fan-out excluding the sender,
+- private delivery isolation,
+- live SSE wake delivery,
+- capability-filtered task routing,
+- atomic task claiming,
+- winner-only `task.assigned` delivery,
+- safe handling of malformed or missing agent action envelopes.
+
+---
+
+## Development Notes
+
+### Frontend
+
+The PM frontend intentionally uses a no-build architecture:
+
+```text
+HTML + CSS + ordered JavaScript modules
+```
+
+The main loader is:
+
+```text
+ProjectManagement/app.js
+```
+
+Feature and phase modules are loaded in a deterministic order.
+
+### Blackboard
+
+The Blackboard uses Node.js built-in APIs only:
+
+- `http`
+- `fs`
+- `path`
+- `crypto`
+- `child_process`
+- native `fetch`
+- Server-Sent Events
+
+This keeps deployment small and avoids a dependency-heavy server runtime.
+
+### UI animation
+
+The frontend uses **anime.js** from jsDelivr for UI animation.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|---|---|
+| **[README.md](README.md)** | Project overview, setup, architecture, and usage |
+| **[blackboard/README.md](blackboard/README.md)** | Blackboard API, wake semantics, bridge configuration, security boundaries, and agent protocol |
+
+---
+
+## Contributing
+
+Contributions are welcome.
+
+When submitting changes:
+
+1. Keep the scope focused and avoid unrelated rewrites.
+2. Preserve the existing local-first workflow unless a change explicitly targets network mode.
+3. Run `npm test` when touching the Blackboard, routing, task claiming, or bridge protocol.
+4. Include example input/output when changing import parsing.
+5. Document new configuration, storage keys, network behavior, or security-sensitive changes.
+6. Avoid committing secrets, generated Blackboard state, or local agent configuration files.
+
+---
+
+## License
+
+Distributed under the **MIT License**.
+
+See **[LICENSE](LICENSE)** for details.
+
+---
+
+<div align="center">
+
+Built as a developer command center for human planning and multi-agent collaboration.
+
+**Local when you want it. Networked when you need it.**
+
+</div>
